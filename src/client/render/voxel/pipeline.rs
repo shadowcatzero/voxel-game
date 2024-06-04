@@ -1,4 +1,6 @@
-use super::{color::VoxelColor, view::View};
+use nalgebra::{Rotation3, Transform3, Translation3, Vector3};
+
+use super::{color::VoxelColor, group::VoxelGroup, view::View};
 use crate::client::render::{
     buf::ArrBufUpdate, storage::Storage, uniform::Uniform, RenderUpdateData,
 };
@@ -8,7 +10,7 @@ pub struct VoxelPipeline {
     view: Uniform<View>,
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
-    texture: wgpu::Texture,
+    voxel_groups: Storage<VoxelGroup>,
     voxels: Storage<VoxelColor>,
     arst: bool,
 }
@@ -24,56 +26,16 @@ impl VoxelPipeline {
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
-        let view = Uniform::<View>::init(device, "View", 0);
-        let texture_size = wgpu::Extent3d {
-            width: WIDTH,
-            height: HEIGHT,
-            depth_or_array_layers: 1,
-        };
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            size: texture_size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            label: Some("diffuse_texture"),
-            view_formats: &[],
-        });
-        let voxels = Storage::init(device, "voxels", 3);
-
-        let diffuse_texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let diffuse_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        });
+        let view = Uniform::<View>::init(device, "view", 0);
+        let voxels = Storage::init(device, "voxels", 1);
+        let voxel_groups = Storage::init(device, "voxel groups", 2);
 
         // bind groups
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 view.bind_group_layout_entry(),
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
                 voxels.bind_group_layout_entry(),
+                voxel_groups.bind_group_layout_entry(),
             ],
             label: Some("tile_bind_group_layout"),
         });
@@ -82,15 +44,8 @@ impl VoxelPipeline {
             layout: &bind_group_layout,
             entries: &[
                 view.bind_group_entry(),
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&diffuse_texture_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&diffuse_sampler),
-                },
                 voxels.bind_group_entry(),
+                voxel_groups.bind_group_entry(),
             ],
             label: Some("tile_bind_group"),
         });
@@ -145,8 +100,8 @@ impl VoxelPipeline {
             view,
             bind_group,
             bind_group_layout,
-            texture,
             voxels,
+            voxel_groups,
             arst: false,
         }
     }
@@ -156,38 +111,37 @@ impl VoxelPipeline {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         belt: &mut wgpu::util::StagingBelt,
-        queue: &mut wgpu::Queue,
         update_data: &RenderUpdateData,
     ) {
-        let texture_size = wgpu::Extent3d {
-            width: WIDTH,
-            height: HEIGHT,
-            depth_or_array_layers: 1,
-        };
         if !self.arst {
-            queue.write_texture(
-                // Tells wgpu where to copy the pixel data
-                wgpu::ImageCopyTexture {
-                    texture: &self.texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                // The actual pixel data
-                &[0xff, 0x00, 0xff, 0xff].repeat((WIDTH * HEIGHT) as usize),
-                // The layout of the texture
-                wgpu::ImageDataLayout {
-                    offset: 0,
-                    bytes_per_row: Some(4 * WIDTH),
-                    rows_per_image: Some(HEIGHT),
-                },
-                texture_size,
-            );
-            let l = 10;
-            let size = l * l * l;
-            let mut data: Vec<_> = vec![VoxelColor::none(); size];
-            data[0] = VoxelColor::white();
-            data[size - 1] = VoxelColor::white();
+            let lx = 15;
+            let ly = 10;
+            let lz = 10;
+            let size = lx * ly * lz;
+            let mut data = vec![VoxelColor::none(); size];
+            for x in 0..lx {
+                for y in 0..ly {
+                    data[x + y * lx] = VoxelColor {
+                        r: (x as f32 / lx as f32 * 255.0) as u8,
+                        g: (y as f32 / ly as f32 * 255.0) as u8,
+                        b: 0,
+                        a: 20,
+                    };
+                }
+            }
+            for x in 0..lx {
+                for y in 0..ly {
+                    data[x + y * lx + 3 * lx * ly] = VoxelColor {
+                        r: (x as f32 / lx as f32 * 255.0) as u8,
+                        g: (y as f32 / ly as f32 * 255.0) as u8,
+                        b: 100,
+                        a: 255,
+                    };
+                }
+            }
+            for i in 0..lx.min(ly.min(lz)) {
+                data[i + i * lx + i * lx * ly] = VoxelColor::white();
+            }
             self.voxels.update(
                 device,
                 encoder,
@@ -195,6 +149,32 @@ impl VoxelPipeline {
                 data.len(),
                 &[ArrBufUpdate { offset: 0, data }],
             );
+            let group = VoxelGroup {
+                transform: Transform3::identity()
+                    * (Translation3::new(-5.0, -5.0, 20.0)
+                    * Rotation3::from_axis_angle(&Vector3::y_axis(), 0.5)).inverse(),
+                dimensions: Vector3::new(lx as u32, ly as u32, lz as u32),
+            };
+            self.voxel_groups.update(
+                device,
+                encoder,
+                belt,
+                1,
+                &[ArrBufUpdate {
+                    offset: 0,
+                    data: vec![group],
+                }],
+            );
+            self.bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &self.bind_group_layout,
+                entries: &[
+                    self.view.bind_group_entry(),
+                    self.voxels.bind_group_entry(),
+                    self.voxel_groups.bind_group_entry(),
+                ],
+                label: Some("tile_bind_group"),
+            });
+
             self.arst = true;
         }
         self.view.update(device, encoder, belt, update_data);

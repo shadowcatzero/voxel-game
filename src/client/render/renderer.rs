@@ -144,7 +144,6 @@ impl<'a> Renderer<'a> {
             &self.device,
             &mut encoder,
             &mut self.staging_belt,
-            &mut self.queue,
             &RenderUpdateData {
                 state,
                 size: &self.size,

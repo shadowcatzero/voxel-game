@@ -13,14 +13,17 @@ struct View {
     transform: mat4x4<f32>,
 };
 
+struct VoxelGroup {
+    transform: mat4x4<f32>,
+    dimensions: vec3<u32>,
+};
+
 @group(0) @binding(0)
 var<uniform> view: View;
 @group(0) @binding(1)
-var t_diffuse: texture_2d<f32>;
-@group(0) @binding(2)
-var s_diffuse: sampler;
-@group(0) @binding(3)
 var<storage, read> voxels: array<u32>;
+@group(0) @binding(2)
+var<storage, read> voxel_groups: array<VoxelGroup>;
 
 @vertex
 fn vs_main(
@@ -52,30 +55,34 @@ fn fs_main(
     pixel_pos.y *= 2.0;
     pixel_pos.y *= aspect;
 
-    pixel_pos = (view.transform * vec4<f32>(pixel_pos, 1.0)).xyz;
-    let origin = (view.transform * vec4<f32>(0.0, 0.0, 0.0, 1.0)).xyz;
+    let group = voxel_groups[0];
+    let dim_f = vec3<f32>(group.dimensions);
+
+    // this should definitely be done per pixel trust me guys
+    let transform = group.transform * view.transform;
+    pixel_pos = (transform * vec4<f32>(pixel_pos, 1.0)).xyz;
+    let origin = (transform * vec4<f32>(0.0, 0.0, 0.0, 1.0)).xyz;
     let dir = normalize(pixel_pos - origin);
 
 
 
-    let voxel_pos = vec3<f32>(-5.0, -5.0, 30.0);
     var t = 0;
+    var color = vec4<f32>(0.0, 0.0, 0.0, 0.0);
     for(t = 0; t < 1000; t += 1) {
-        let pos = pixel_pos + f32(t) * 0.1 * dir - voxel_pos;
-        let rel_coords = vec3<i32>(pos.xyz);
-        if rel_coords.x < 0 || rel_coords.y < 0 || rel_coords.z < 0 || rel_coords.x > 10 || rel_coords.y > 10 || rel_coords.z > 10 {
+        let pos = pixel_pos + f32(t) * 0.1 * dir;
+        if pos.x < 0.0 || pos.y < 0.0 || pos.z < 0.0 || pos.x > dim_f.x || pos.y > dim_f.y || pos.z > dim_f.z {
             continue;
         } else {
-            let i = rel_coords.x + rel_coords.y * 10 + rel_coords.z * 100;
-            let color = unpack4x8unorm(voxels[i]);
-            if voxels[i] != 0 {
-                return vec4<f32>(1.0);
-            } else {
-                let pos = vec3<f32>(rel_coords);
-                return vec4<f32>(pos.x / 10.0, pos.y / 10.0, pos.z / 10.0, 1.0);
+            let rel_coords = vec3<u32>(pos.xyz);
+            let i = u32(rel_coords.x + rel_coords.y * group.dimensions.x + rel_coords.z * group.dimensions.x * group.dimensions.y);
+            let vcolor = unpack4x8unorm(voxels[i]);
+            // now I understand premultiplied alpha lmao
+            color += vec4<f32>(vcolor.xyz * vcolor.a * (1.0 - color.a), (1.0 - color.a) * vcolor.a);
+            if color.a == 1.0 {
+                break;
             }
         }
     }
 
-    return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+    return color;
 }
