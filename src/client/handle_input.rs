@@ -1,6 +1,6 @@
-use std::time::Duration;
+use std::{f32::consts::PI, time::Duration};
 
-use nalgebra::{Rotation3, Vector3};
+use nalgebra::Rotation3;
 use winit::{dpi::LogicalPosition, keyboard::KeyCode as Key, window::CursorGrabMode};
 
 use super::Client;
@@ -19,7 +19,7 @@ impl Client<'_> {
                     window.set_cursor_visible(true);
                     CursorGrabMode::None
                 };
-                #[cfg(not(target_os="windows"))]
+                #[cfg(not(target_os = "windows"))]
                 window.set_cursor_grab(mode).expect("wah");
             }
             return;
@@ -27,18 +27,25 @@ impl Client<'_> {
         if self.grabbed_cursor {
             if let Some(window) = &self.window {
                 let size = window.inner_size();
-                window.set_cursor_position(LogicalPosition::new(size.width / 2, size.height / 2)).expect("wah");
+                window
+                    .set_cursor_position(LogicalPosition::new(size.width / 2, size.height / 2))
+                    .expect("wah");
             }
             let delta = input.mouse_delta;
             if delta.x != 0.0 {
-                state.camera.orientation =
-                    Rotation3::from_axis_angle(&state.camera.up(), delta.x * 0.003)
-                        * state.camera.orientation;
+                state.camera.orientation = Rotation3::from_axis_angle(
+                    &state.camera.up(),
+                    (delta.x * 0.003).clamp(-PI, PI),
+                ) * state.camera.orientation;
             }
             if delta.y != 0.0 {
-                state.camera.orientation =
-                    Rotation3::from_axis_angle(&state.camera.right(), delta.y * 0.003)
-                        * state.camera.orientation;
+                state.camera.orientation = Rotation3::from_axis_angle(
+                    &state.camera.right(),
+                    (delta.y * 0.003).clamp(-PI, PI),
+                ) * state.camera.orientation;
+            }
+            if delta.x != 0.0 || delta.y != 0.0 {
+                state.camera.orientation.renormalize();
             }
         }
         let rot_dist = 1.0 * dt;
