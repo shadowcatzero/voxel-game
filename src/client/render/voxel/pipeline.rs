@@ -155,6 +155,7 @@ impl VoxelPipeline {
             let group = VoxelGroup {
                 transform: Transform3::identity() * thing.inverse(),
                 dimensions: Vector3::new(lx as u32, ly as u32, lz as u32),
+                offset: 0,
             };
             self.voxel_groups.update(
                 device,

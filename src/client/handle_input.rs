@@ -1,11 +1,7 @@
-use std::{f32::consts::PI, time::Duration};
+use std::time::Duration;
 
 use nalgebra::Rotation3;
-use winit::{
-    dpi::{LogicalPosition, PhysicalPosition},
-    keyboard::KeyCode as Key,
-    window::CursorGrabMode,
-};
+use winit::{dpi::PhysicalPosition, keyboard::KeyCode as Key, window::CursorGrabMode};
 
 use super::Client;
 
@@ -27,11 +23,13 @@ impl Client<'_> {
                             self.keep_cursor = true;
                             window.set_cursor_grab(CursorGrabMode::Confined)
                         })
-                        .expect("wah");
+                        .expect("cursor lock");
                 } else {
                     self.keep_cursor = false;
                     window.set_cursor_visible(true);
-                    window.set_cursor_grab(CursorGrabMode::None).expect("wah");
+                    window
+                        .set_cursor_grab(CursorGrabMode::None)
+                        .expect("cursor unlock");
                 };
             }
             return;
@@ -42,21 +40,18 @@ impl Client<'_> {
                     let size = window.inner_size();
                     window
                         .set_cursor_position(PhysicalPosition::new(size.width / 2, size.height / 2))
-                        .expect("wah");
+                        .expect("cursor move");
                 }
             }
-            let delta = input.mouse_delta;
+            let delta = input.mouse_delta * 0.003;
             if delta.x != 0.0 {
-                state.camera.orientation = Rotation3::from_axis_angle(
-                    &state.camera.up(),
-                    (delta.x * 0.003).clamp(-PI, PI),
-                ) * state.camera.orientation;
+                state.camera.orientation = Rotation3::from_axis_angle(&state.camera.up(), delta.x)
+                    * state.camera.orientation;
             }
             if delta.y != 0.0 {
-                state.camera.orientation = Rotation3::from_axis_angle(
-                    &state.camera.right(),
-                    (delta.y * 0.003).clamp(-PI, PI),
-                ) * state.camera.orientation;
+                state.camera.orientation =
+                    Rotation3::from_axis_angle(&state.camera.right(), delta.y)
+                        * state.camera.orientation;
             }
         }
         let rot_dist = 1.0 * dt;
@@ -94,14 +89,6 @@ impl Client<'_> {
         }
         if input.pressed(Key::ShiftLeft) {
             state.camera.pos += *state.camera.down() * move_dist;
-        }
-        if input.pressed(Key::KeyZ) {
-            state.camera_scroll += dt * 10.0;
-            state.camera.scale = (state.camera_scroll * 0.1).exp();
-        }
-        if input.pressed(Key::KeyX) {
-            state.camera_scroll -= dt * 10.0;
-            state.camera.scale = (state.camera_scroll * 0.1).exp();
         }
     }
 }
