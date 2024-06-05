@@ -125,7 +125,7 @@ impl VoxelPipeline {
                         r: (x as f32 / lx as f32 * 255.0) as u8,
                         g: (y as f32 / ly as f32 * 255.0) as u8,
                         b: 0,
-                        a: 20,
+                        a: 100,
                     };
                 }
             }
@@ -149,10 +149,11 @@ impl VoxelPipeline {
                 data.len(),
                 &[ArrBufUpdate { offset: 0, data }],
             );
+            let thing = Translation3::new(0.0, 0.0, 20.0)
+                * Rotation3::from_axis_angle(&Vector3::y_axis(), 0.5)
+                * Translation3::new(-(lx as f32 / 2.0), -(ly as f32 / 2.0), -(lz as f32 / 2.0));
             let group = VoxelGroup {
-                transform: Transform3::identity()
-                    * (Translation3::new(-5.0, -5.0, 20.0)
-                    * Rotation3::from_axis_angle(&Vector3::y_axis(), 0.5)).inverse(),
+                transform: Transform3::identity() * thing.inverse(),
                 dimensions: Vector3::new(lx as u32, ly as u32, lz as u32),
             };
             self.voxel_groups.update(
