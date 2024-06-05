@@ -44,9 +44,6 @@ impl Client<'_> {
                     (delta.y * 0.003).clamp(-PI, PI),
                 ) * state.camera.orientation;
             }
-            if delta.x != 0.0 || delta.y != 0.0 {
-                state.camera.orientation.renormalize();
-            }
         }
         let rot_dist = 1.0 * dt;
         if input.pressed(Key::KeyQ) {
@@ -59,6 +56,7 @@ impl Client<'_> {
                 Rotation3::from_axis_angle(&state.camera.forward(), -rot_dist)
                     * state.camera.orientation;
         }
+        state.camera.orientation.renormalize();
         if input.scroll_delta != 0.0 {
             state.camera_scroll += input.scroll_delta;
             state.camera.scale = (state.camera_scroll * 0.2).exp();
