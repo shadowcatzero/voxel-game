@@ -27,7 +27,7 @@ impl Client<'_> {
         if self.grabbed_cursor {
             if let Some(window) = &self.window {
                 let size = window.inner_size();
-                window.set_cursor_position(LogicalPosition::new(size.width, size.height)).expect("wah");
+                window.set_cursor_position(LogicalPosition::new(size.width / 2, size.height / 2)).expect("wah");
             }
             let delta = input.mouse_delta;
             if delta.x != 0.0 {
