@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use nalgebra::{Rotation3, Vector3};
-use winit::{keyboard::KeyCode as Key, window::CursorGrabMode};
+use winit::{dpi::LogicalPosition, keyboard::KeyCode as Key, window::CursorGrabMode};
 
 use super::Client;
 
@@ -19,11 +19,16 @@ impl Client<'_> {
                     window.set_cursor_visible(true);
                     CursorGrabMode::None
                 };
+                #[cfg(not(target_os="windows"))]
                 window.set_cursor_grab(mode).expect("wah");
             }
             return;
         }
         if self.grabbed_cursor {
+            if let Some(window) = &self.window {
+                let size = window.inner_size();
+                window.set_cursor_position(LogicalPosition::new(size.width, size.height)).expect("wah");
+            }
             let delta = input.mouse_delta;
             if delta.x != 0.0 {
                 state.camera.orientation =
