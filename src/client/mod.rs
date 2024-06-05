@@ -26,6 +26,7 @@ pub struct Client<'a> {
     prev_frame: Instant,
     prev_update: Instant,
     grabbed_cursor: bool,
+    keep_cursor: bool,
 }
 
 impl Client<'_> {
@@ -41,6 +42,7 @@ impl Client<'_> {
             prev_update: Instant::now(),
             target: Instant::now(),
             grabbed_cursor: false,
+            keep_cursor: false,
         }
     }
 

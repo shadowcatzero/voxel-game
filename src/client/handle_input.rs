@@ -1,7 +1,11 @@
 use std::{f32::consts::PI, time::Duration};
 
 use nalgebra::Rotation3;
-use winit::{dpi::LogicalPosition, keyboard::KeyCode as Key, window::CursorGrabMode};
+use winit::{
+    dpi::{LogicalPosition, PhysicalPosition},
+    keyboard::KeyCode as Key,
+    window::CursorGrabMode,
+};
 
 use super::Client;
 
@@ -12,24 +16,34 @@ impl Client<'_> {
         if input.just_pressed(Key::Escape) {
             if let Some(window) = &self.window {
                 self.grabbed_cursor = !self.grabbed_cursor;
-                let mode = if self.grabbed_cursor {
+                if self.grabbed_cursor {
                     window.set_cursor_visible(false);
-                    CursorGrabMode::Locked
+                    window
+                        .set_cursor_grab(CursorGrabMode::Locked)
+                        .map(|_| {
+                            self.keep_cursor = false;
+                        })
+                        .or_else(|_| {
+                            self.keep_cursor = true;
+                            window.set_cursor_grab(CursorGrabMode::Confined)
+                        })
+                        .expect("wah");
                 } else {
+                    self.keep_cursor = false;
                     window.set_cursor_visible(true);
-                    CursorGrabMode::None
+                    window.set_cursor_grab(CursorGrabMode::None).expect("wah");
                 };
-                #[cfg(not(target_os = "windows"))]
-                window.set_cursor_grab(mode).expect("wah");
             }
             return;
         }
         if self.grabbed_cursor {
             if let Some(window) = &self.window {
-                let size = window.inner_size();
-                window
-                    .set_cursor_position(LogicalPosition::new(size.width / 2, size.height / 2))
-                    .expect("wah");
+                if self.keep_cursor {
+                    let size = window.inner_size();
+                    window
+                        .set_cursor_position(PhysicalPosition::new(size.width / 2, size.height / 2))
+                        .expect("wah");
+                }
             }
             let delta = input.mouse_delta;
             if delta.x != 0.0 {
