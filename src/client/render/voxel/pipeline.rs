@@ -117,8 +117,7 @@ impl VoxelPipeline {
             let lx = 15;
             let ly = 10;
             let lz = 10;
-            let size = lx * ly * lz;
-            let mut data = vec![VoxelColor::none(); size];
+            let mut data = vec![VoxelColor::none(); lx * ly * lz];
             for x in 0..lx {
                 for y in 0..ly {
                     data[x + y * lx] = VoxelColor {
@@ -142,6 +141,32 @@ impl VoxelPipeline {
             for i in 0..lx.min(ly.min(lz)) {
                 data[i + i * lx + i * lx * ly] = VoxelColor::white();
             }
+
+            let lx2 = 1000;
+            let ly2 = 2;
+            let lz2 = 1000;
+            let offset2 = data.len();
+            let mut data2 = vec![VoxelColor::none(); lx2 * ly2 * lz2];
+            let paint = VoxelColor {
+                r: 255,
+                g: 0,
+                b: 255,
+                a: 255,
+            };
+            for x in 0..lx2 {
+                data2[x + (ly2 - 1) * lx2] = paint;
+                data2[x + (ly2 - 1) * lx2 + (lz2 - 1) * lx2 * ly2] = paint;
+            }
+            for z in 0..lz2 {
+                data2[(ly2 - 1) * lx2 + z * lx2 * ly2] = paint;
+                data2[lx2 - 1 + (ly2 - 1) * lx2 + z * lx2 * ly2] = paint;
+            }
+            for x in 0..lx2 {
+                for z in 0..lz2 {
+                    data2[x + z * lx2 * ly2] = VoxelColor::random();
+                }
+            }
+            data.append(&mut data2);
             self.voxels.update(
                 device,
                 encoder,
@@ -157,14 +182,25 @@ impl VoxelPipeline {
                 dimensions: Vector3::new(lx as u32, ly as u32, lz as u32),
                 offset: 0,
             };
+            let thing2 = Translation3::new(0.0, -10.0, 20.0)
+                * Translation3::new(
+                    -(lx2 as f32 / 2.0),
+                    -(ly2 as f32 / 2.0),
+                    -(lz2 as f32 / 2.0),
+                );
+            let group2 = VoxelGroup {
+                transform: Transform3::identity() * thing2.inverse(),
+                dimensions: Vector3::new(lx2 as u32, ly2 as u32, lz2 as u32),
+                offset: offset2 as u32,
+            };
             self.voxel_groups.update(
                 device,
                 encoder,
                 belt,
-                1,
+                2,
                 &[ArrBufUpdate {
                     offset: 0,
-                    data: vec![group],
+                    data: vec![group, group2],
                 }],
             );
             self.bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {

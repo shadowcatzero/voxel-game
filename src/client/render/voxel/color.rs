@@ -32,4 +32,12 @@ impl VoxelColor {
             a: 255,
         }
     }
+    pub fn random() -> Self {
+        Self {
+            r: rand::random(),
+            g: rand::random(),
+            b: rand::random(),
+            a: rand::random(),
+        }
+    }
 }

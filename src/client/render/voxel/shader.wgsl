@@ -44,14 +44,9 @@ fn vs_main(
 
 // Fragment shader
 
-const X_AXIS = vec3<f32>(1.0, 0.0, 0.0);
-const Y_AXIS = vec3<f32>(0.0, 1.0, 0.0);
-const Z_AXIS = vec3<f32>(0.0, 0.0, 1.0);
-const AXIS = mat3x3<f32>(X_AXIS, Y_AXIS, Z_AXIS);
-
 const ZERO3F = vec3<f32>(0.0);
 const ZERO2F = vec2<f32>(0.0);
-const NO_COLOR = vec4<f32>(0.0);
+const DEPTH = 20;
 
 @fragment
 fn fs_main(
@@ -65,87 +60,128 @@ fn fs_main(
         1.0
     );
 
-    let group = voxel_groups[0];
+    // move to position in world
+    let dir_view = view.transform * vec4<f32>(normalize(pixel_pos), 0.0);
+    let pos_view = view.transform * vec4<f32>(pixel_pos, 1.0);
+
+    var depths = array<f32,DEPTH>();
+    var colors = array<vec4<f32>,DEPTH>();
+
+    for (var gi: u32 = 0; gi < arrayLength(&voxel_groups); gi = gi + 1) {
+        draw_group(gi, pos_view, dir_view, &depths, &colors);
+    }
+    var color = vec4<f32>(0.0);
+    for(var di = 0; di < DEPTH; di += 1) {
+        // p sure if it can't unroll colors the performance dies; switch to buffer
+        let vcolor = colors[di];
+        color += vec4<f32>(vcolor.xyz * vcolor.a * (1.0 - color.a), (1.0 - color.a) * vcolor.a);
+        if vcolor.a == 0.0 || color.a >= 0.99999 {
+            return color;
+        }
+    }
+    return color;
+}
+
+fn draw_group(
+    gi: u32, pos_view: vec4<f32>, dir_view: vec4<f32>,
+    depths: ptr<function, array<f32, DEPTH>>,
+    colors: ptr<function, array<vec4<f32>,DEPTH>>,
+) {
+    let group = voxel_groups[gi];
     let dim_f = vec3<f32>(group.dimensions);
     let dim_i = vec3<i32>(group.dimensions);
 
-    // transform position so that group is at 0,0 & find direction
-    let transform = group.transform * view.transform;
-    let dir = (transform * vec4<f32>(normalize(pixel_pos), 0.0)).xyz;
-    var pos = (transform * vec4<f32>(pixel_pos, 1.0)).xyz;
+    // transform so that group is at 0,0
+    var pos = (group.transform * pos_view).xyz;
+    let dir = (group.transform * dir_view).xyz;
+
+    let dir_if = sign(dir);
 
 
 
     // find where ray intersects with group
-    let plane_point = (vec3<f32>(1.0) - sign(dir)) / 2.0 * dim_f;
+    let plane_point = (vec3<f32>(1.0) - dir_if) / 2.0 * dim_f;
+    var t_offset = 0.0;
     if outside3f(pos, ZERO3F, dim_f) {
-        // x = td + p, solve for t
-        let t = (plane_point - pos) / dir;
+        // time of intersection; x = td + p, solve for t
+        let t_i = (plane_point - pos) / dir;
         // points of intersection
-        let px = pos + t.x * dir;
-        let py = pos + t.y * dir;
-        let pz = pos + t.z * dir;
+        let px = pos + t_i.x * dir;
+        let py = pos + t_i.y * dir;
+        let pz = pos + t_i.z * dir;
 
         // check if point is in bounds
         let hit = vec3<bool>(
             inside2f(px.yz, ZERO2F, dim_f.yz),
             inside2f(py.xz, ZERO2F, dim_f.xz),
             inside2f(pz.xy, ZERO2F, dim_f.xy),
-        ) && (t > ZERO3F);
+        ) && (t_i > ZERO3F);
         if !any(hit) {
-            return NO_COLOR;
+            return;
         }
         pos = select(select(pz, py, hit.y), px, hit.x);
+        t_offset = select(select(t_i.z, t_i.y, hit.y), t_i.x, hit.x);
     }
     var vox_pos = clamp(vec3<i32>(pos), vec3<i32>(0), dim_i - vec3<i32>(1));
 
 
 
-    let dir_if = sign(dir) * ceil(abs(dir));
     let dir_i = vec3<i32>(dir_if);
     // time to move 1 unit using dir
     let inc_t = abs(1.0 / dir);
-    let corner = vec3<f32>(vox_pos) + vec3<f32>(0.5, 0.5, 0.5) + dir_if / 2.0;
+    let corner = vec3<f32>(vox_pos) + vec3<f32>(0.5) + dir_if / 2.0;
 
     // time of next plane hit for each direction
     var next_t = inc_t * abs(pos - corner);
-    var color = NO_COLOR;
+    var alpha = 0.0;
     var safety = 0;
+    var t = 0.0;
+    var prev_t = t;
+    var depth = 0;
     loop {
+        // should prolly remove when gaming
+        safety += 1;
+
         let i = u32(vox_pos.x + vox_pos.y * dim_i.x + vox_pos.z * dim_i.x * dim_i.y) + group.offset;
-        let vcolor = unpack4x8unorm(voxels[i]);
-        color += vec4<f32>(vcolor.xyz * vcolor.a * (1.0 - color.a), (1.0 - color.a) * vcolor.a);
-        if color.a >= 1.0 {
-            return color;
-        }
+        var vcolor = unpack4x8unorm(voxels[i]);
 
         // select next voxel to move to next based on least time
-        if next_t.x < next_t.y && next_t.x < next_t.z {
-            vox_pos.x += dir_i.x;
-            next_t.x += inc_t.x;
-            if vox_pos.x < 0 || vox_pos.x >= dim_i.x {
-                return color;
+        let axis = select(select(2, 1, next_t.y < next_t.z), 0, next_t.x < next_t.y && next_t.x < next_t.z);
+        prev_t = t;
+        t = next_t[axis];
+        vox_pos[axis] += dir_i[axis];
+        next_t[axis] += inc_t[axis];
+
+        // hit a voxel
+        if vcolor.a > 0.0 {
+            let full_t = t_offset + prev_t;
+            // skip closer depth hits, or completely if behind opaque
+            while (*depths)[depth] < full_t && (*colors)[depth].a != 0.0 {
+                depth += 1;
+                if depth >= DEPTH || (*colors)[depth].a == 1.0 {
+                    return;
+                }
             }
-        } else if next_t.y < next_t.z {
-            vox_pos.y += dir_i.y;
-            next_t.y += inc_t.y;
-            if vox_pos.y < 0 || vox_pos.y >= dim_i.y {
-                return color;
+            var move_d = depth;
+            // move further depth hits back
+            while move_d < DEPTH - 1 && (*colors)[move_d].a != 0.0 {
+                (*colors)[move_d + 1] = (*colors)[move_d];
+                (*depths)[move_d + 1] = (*depths)[move_d];
+                move_d += 1;
             }
-        } else {
-            vox_pos.z += dir_i.z;
-            next_t.z += inc_t.z;
-            if vox_pos.z < 0 || vox_pos.z >= dim_i.z {
-                return color;
-            }
+            // add hit
+            (*depths)[depth] = full_t;
+            (*colors)[depth] = vcolor;
+            depth += 1;
+            alpha += (1.0 - alpha) * vcolor.a;
         }
 
-        safety += 1;
-        if safety > 1000 {
-            break;
+        if alpha >= 0.9999 || depth >= DEPTH
+            || vox_pos[axis] < 0 || vox_pos[axis] >= dim_i[axis]
+            || safety > 1000 {
+            return;
         }
     }
-    return vec4<f32>(1.0, 0.0, 0.0, 1.0);
 }
 
 fn outside3f(v: vec3<f32>, low: vec3<f32>, high: vec3<f32>) -> bool {
