@@ -182,7 +182,7 @@ impl VoxelPipeline {
                 dimensions: Vector3::new(lx as u32, ly as u32, lz as u32),
                 offset: 0,
             };
-            let thing2 = Translation3::new(0.0, -10.0, 20.0)
+            let thing2 = Translation3::new(0.0, 2.5, 20.0)
                 * Translation3::new(
                     -(lx2 as f32 / 2.0),
                     -(ly2 as f32 / 2.0),
