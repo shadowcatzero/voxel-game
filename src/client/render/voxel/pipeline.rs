@@ -211,7 +211,7 @@ impl VoxelPipeline {
                 offset: offset2 as u32,
             };
             let proj3 = Projective3::identity()
-                * Translation3::new(0.0, 0.0, 10.0)
+                * Translation3::new(0.0, 0.0, 16.5)
                 * Rotation3::from_axis_angle(&Vector3::y_axis(), std::f32::consts::PI / 4.0)
                 * Rotation3::from_axis_angle(
                     &UnitVector3::new_normalize(Vector3::new(1.0, 0.0, 1.0)),
