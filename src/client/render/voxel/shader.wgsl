@@ -207,7 +207,7 @@ fn apply_group(
             let specular = (exp(max(
                 -(dot(reflect(dir_view.xyz, normal), norm_light) + 0.90) * 4.0, 0.0
             )) - 1.0) * shadow;
-            let lighting = max(diffuse, ambient) * shadow;
+            let lighting = max(diffuse * shadow, ambient);
             let new_rgb = min(vcolor.xyz * lighting + vec3<f32>(specular), vec3<f32>(1.0));
             let new_a = min(vcolor.a + specular, 1.0);
             let color = vec4<f32>(new_rgb, new_a);
