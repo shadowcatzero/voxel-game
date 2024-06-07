@@ -15,6 +15,7 @@ struct View {
 
 struct VoxelGroup {
     transform: mat4x4<f32>,
+    transform_inv: mat4x4<f32>,
     dimensions: vec3<u32>,
     offset: u32,
 };
@@ -44,11 +45,6 @@ fn vs_main(
 
 // Fragment shader
 
-const ZERO3F = vec3<f32>(0.0);
-const ZERO2F = vec2<f32>(0.0);
-const DEPTH = 20;
-const FULL_ALPHA = 0.9999;
-
 @fragment
 fn fs_main(
     in: VertexOutput,
@@ -58,247 +54,26 @@ fn fs_main(
     let aspect = win_dim.y / win_dim.x;
     let pixel_pos = vec3<f32>(
         (in.clip_position.xy / win_dim - vec2<f32>(0.5)) * vec2<f32>(2.0, -2.0 * aspect),
-        0.0
+        1.0
     );
 
     // move to position in world
-    let dir_view = view.transform * vec4<f32>(normalize(pixel_pos + vec3<f32>(0.0, 0.0, 1.0)), 0.0);
-    let pos_view = view.transform * vec4<f32>(pixel_pos, 1.0);
+    let pos = view.transform * vec4<f32>(pixel_pos, 1.0);
+    let dir = view.transform * vec4<f32>(normalize(pixel_pos), 0.0);
 
-    var color = trace_full(pos_view, dir_view);
+    var color = trace_full(pos, dir);
+    let light_mult = clamp((-dot(dir.xyz, normalize(GLOBAL_LIGHT)) - 0.99) * 200.0, 0.0, 1.0);
+    let sky_color = light_mult * vec3<f32>(1.0, 1.0, 1.0);
+    color += vec4<f32>(sky_color * (1.0 - color.a), 1.0 - color.a);
     color.a = 1.0;
     return color;
 }
 
-fn trace_one(gi: u32, pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
-    let group = voxel_groups[gi];
-    let dim_f = vec3<f32>(group.dimensions);
-    let dim_i = vec3<i32>(group.dimensions);
-
-    // transform so that group is at 0,0
-    var pos = (group.transform * pos_view).xyz;
-    let dir = (group.transform * dir_view).xyz;
-
-    let dir_if = sign(dir);
-
-
-
-    // find where ray intersects with group
-    let plane_point = (vec3<f32>(1.0) - dir_if) / 2.0 * dim_f;
-    var t_offset = 0.0;
-    if outside3f(pos, ZERO3F, dim_f) {
-        // time of intersection; x = td + p, solve for t
-        let t_i = (plane_point - pos) / dir;
-        // points of intersection
-        let px = pos + t_i.x * dir;
-        let py = pos + t_i.y * dir;
-        let pz = pos + t_i.z * dir;
-
-        // check if point is in bounds
-        let hit = vec3<bool>(
-            inside2f(px.yz, ZERO2F, dim_f.yz),
-            inside2f(py.xz, ZERO2F, dim_f.xz),
-            inside2f(pz.xy, ZERO2F, dim_f.xy),
-        ) && (t_i > ZERO3F);
-        if !any(hit) {
-            return vec4<f32>(0.0);
-        }
-        pos = select(select(pz, py, hit.y), px, hit.x);
-        t_offset = select(select(t_i.z, t_i.y, hit.y), t_i.x, hit.x);
-    }
-    var vox_pos = clamp(vec3<i32>(pos), vec3<i32>(0), dim_i - vec3<i32>(1));
-
-
-
-    let dir_i = vec3<i32>(dir_if);
-    // time to move 1 unit using dir
-    let inc_t = abs(1.0 / dir);
-    let corner = vec3<f32>(vox_pos) + vec3<f32>(0.5) + dir_if / 2.0;
-
-    // time of next plane hit for each direction
-    var next_t = inc_t * abs(pos - corner);
-    var color = vec4<f32>(0.0);
-    loop {
-        let i = u32(vox_pos.x + vox_pos.y * dim_i.x + vox_pos.z * dim_i.x * dim_i.y) + group.offset;
-        var vcolor = unpack4x8unorm(voxels[i]);
-
-        // select next voxel to move to next based on least time
-        let axis = select(select(2, 1, next_t.y < next_t.z), 0, next_t.x < next_t.y && next_t.x < next_t.z);
-        vox_pos[axis] += dir_i[axis];
-        next_t[axis] += inc_t[axis];
-        color += vec4<f32>(vcolor.xyz * vcolor.a * (1.0 - color.a), (1.0 - color.a) * vcolor.a);
-
-        if color.a >= FULL_ALPHA || vox_pos[axis] < 0 || vox_pos[axis] >= dim_i[axis] {
-            break;
-        }
-    }
-    return color;
-}
-
-fn trace_opaque(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
-    var depth = 9999999999999.0;
-    var result = vec4<f32>(0.0);
-    for (var gi: u32 = 0; gi < arrayLength(&voxel_groups); gi = gi + 1) {
-        let group = voxel_groups[gi];
-        let dim_f = vec3<f32>(group.dimensions);
-        let dim_i = vec3<i32>(group.dimensions);
-
-        // transform so that group is at 0,0
-        var pos = (group.transform * pos_view).xyz;
-        let dir = (group.transform * dir_view).xyz;
-
-        let dir_if = sign(dir);
-
-
-
-        // find where ray intersects with group
-        let plane_point = (vec3<f32>(1.0) - dir_if) / 2.0 * dim_f;
-        var t_offset = 0.0;
-        if outside3f(pos, ZERO3F, dim_f) {
-            // time of intersection; x = td + p, solve for t
-            let t_i = (plane_point - pos) / dir;
-            // points of intersection
-            let px = pos + t_i.x * dir;
-            let py = pos + t_i.y * dir;
-            let pz = pos + t_i.z * dir;
-
-            // check if point is in bounds
-            let hit = vec3<bool>(
-                inside2f(px.yz, ZERO2F, dim_f.yz),
-                inside2f(py.xz, ZERO2F, dim_f.xz),
-                inside2f(pz.xy, ZERO2F, dim_f.xy),
-            ) && (t_i > ZERO3F);
-            if !any(hit) {
-                continue;
-            }
-            pos = select(select(pz, py, hit.y), px, hit.x);
-            t_offset = select(select(t_i.z, t_i.y, hit.y), t_i.x, hit.x);
-        }
-        var vox_pos = clamp(vec3<i32>(pos), vec3<i32>(0), dim_i - vec3<i32>(1));
-
-
-
-        let dir_i = vec3<i32>(dir_if);
-        // time to move 1 unit using dir
-        let inc_t = abs(1.0 / dir);
-        let corner = vec3<f32>(vox_pos) + vec3<f32>(0.5) + dir_if / 2.0;
-
-        // time of next plane hit for each direction
-        var next_t = inc_t * abs(pos - corner);
-        var t = 0.0;
-        var prev_t = t;
-        var color = vec4<f32>(0.0);
-        var gdepth = 9999999999999.0;
-        loop {
-            let i = u32(vox_pos.x + vox_pos.y * dim_i.x + vox_pos.z * dim_i.x * dim_i.y) + group.offset;
-            var vcolor = unpack4x8unorm(voxels[i]);
-
-            // select next voxel to move to next based on least time
-            let axis = select(select(2, 1, next_t.y < next_t.z), 0, next_t.x < next_t.y && next_t.x < next_t.z);
-            prev_t = t;
-            t = next_t[axis];
-            vox_pos[axis] += dir_i[axis];
-            next_t[axis] += inc_t[axis];
-
-            // hit a voxel
-            if vcolor.a > 0.0 {
-                let full_t = t_offset + prev_t;
-                gdepth = min(gdepth, full_t);
-                color = vcolor;
-                break;
-            }
-
-            if vox_pos[axis] < 0 || vox_pos[axis] >= dim_i[axis] {
-                break;
-            }
-        }
-        result = select(result, color, gdepth < depth);
-        depth = min(gdepth, depth);
-    }
-    return result;
-}
-
-fn trace_first(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
-    var depth = 9999999999999.0;
-    var result = vec4<f32>(0.0);
-    for (var gi: u32 = 0; gi < arrayLength(&voxel_groups); gi = gi + 1) {
-        let group = voxel_groups[gi];
-        let dim_f = vec3<f32>(group.dimensions);
-        let dim_i = vec3<i32>(group.dimensions);
-
-        // transform so that group is at 0,0
-        var pos = (group.transform * pos_view).xyz;
-        let dir = (group.transform * dir_view).xyz;
-
-        let dir_if = sign(dir);
-
-
-
-        // find where ray intersects with group
-        let plane_point = (vec3<f32>(1.0) - dir_if) / 2.0 * dim_f;
-        var t_offset = 0.0;
-        if outside3f(pos, ZERO3F, dim_f) {
-            // time of intersection; x = td + p, solve for t
-            let t_i = (plane_point - pos) / dir;
-            // points of intersection
-            let px = pos + t_i.x * dir;
-            let py = pos + t_i.y * dir;
-            let pz = pos + t_i.z * dir;
-
-            // check if point is in bounds
-            let hit = vec3<bool>(
-                inside2f(px.yz, ZERO2F, dim_f.yz),
-                inside2f(py.xz, ZERO2F, dim_f.xz),
-                inside2f(pz.xy, ZERO2F, dim_f.xy),
-            ) && (t_i > ZERO3F);
-            if !any(hit) {
-                continue;
-            }
-            pos = select(select(pz, py, hit.y), px, hit.x);
-            t_offset = select(select(t_i.z, t_i.y, hit.y), t_i.x, hit.x);
-        }
-        var vox_pos = clamp(vec3<i32>(pos), vec3<i32>(0), dim_i - vec3<i32>(1));
-
-
-
-        let dir_i = vec3<i32>(dir_if);
-        // time to move 1 unit using dir
-        let inc_t = abs(1.0 / dir);
-        let corner = vec3<f32>(vox_pos) + vec3<f32>(0.5) + dir_if / 2.0;
-
-        // time of next plane hit for each direction
-        var next_t = inc_t * abs(pos - corner);
-        var t = 0.0;
-        var prev_t = t;
-        var color = vec4<f32>(0.0);
-        var gdepth = 9999999999999.0;
-        loop {
-            let i = u32(vox_pos.x + vox_pos.y * dim_i.x + vox_pos.z * dim_i.x * dim_i.y) + group.offset;
-            var vcolor = unpack4x8unorm(voxels[i]);
-
-            // select next voxel to move to next based on least time
-            let axis = select(select(2, 1, next_t.y < next_t.z), 0, next_t.x < next_t.y && next_t.x < next_t.z);
-            prev_t = t;
-            t = next_t[axis];
-            vox_pos[axis] += dir_i[axis];
-            next_t[axis] += inc_t[axis];
-
-            // hit a voxel
-            if vcolor.a > 0.0 {
-                let full_t = t_offset + prev_t;
-                gdepth = min(gdepth, full_t);
-                color += vec4<f32>(vcolor.xyz * vcolor.a * (1.0 - color.a), (1.0 - color.a) * vcolor.a);
-            }
-
-            if color.a >= FULL_ALPHA || vox_pos[axis] < 0 || vox_pos[axis] >= dim_i[axis] {
-                break;
-            }
-        }
-        result = select(result, color, gdepth < depth);
-        depth = min(gdepth, depth);
-    }
-    return result;
-}
+const ZERO3F = vec3<f32>(0.0);
+const ZERO2F = vec2<f32>(0.0);
+const DEPTH = 20;
+const FULL_ALPHA = 0.9999;
+const GLOBAL_LIGHT = vec3<f32>(-0.5, -4.0, 2.0);
 
 fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
     // GPUs hate this
@@ -319,6 +94,10 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
     return color;
 }
 
+// apparently GPUs don't like dynamic indexing cause they just have
+// a ton of registers instead of fast memory access; should probably
+// try to optimize for that where I can
+
 fn apply_group(
     gi: u32, pos_view: vec4<f32>, dir_view: vec4<f32>,
     depths: ptr<function, array<f32, DEPTH>>,
@@ -329,12 +108,21 @@ fn apply_group(
     let dim_i = vec3<i32>(group.dimensions);
 
     // transform so that group is at 0,0
-    var pos = (group.transform * pos_view).xyz;
-    let dir = (group.transform * dir_view).xyz;
+    var pos = (group.transform_inv * pos_view).xyz;
+    let dir = (group.transform_inv * dir_view).xyz;
 
     let dir_if = sign(dir);
 
 
+
+    // calculate normals; maybe should do this on cpu?
+    let normals = mat3x3<f32>(
+        (group.transform * vec4<f32>(dir_if.x, 0.0, 0.0, 0.0)).xyz,
+        (group.transform * vec4<f32>(0.0, dir_if.y, 0.0, 0.0)).xyz,
+        (group.transform * vec4<f32>(0.0, 0.0, dir_if.z, 0.0)).xyz,
+    );
+    var next_normal = vec3<f32>(0.0, 0.0, 0.0);
+    let norm_light = normalize(GLOBAL_LIGHT);
 
     // find where ray intersects with group
     let plane_point = (vec3<f32>(1.0) - dir_if) / 2.0 * dim_f;
@@ -358,6 +146,7 @@ fn apply_group(
         }
         pos = select(select(pz, py, hit.y), px, hit.x);
         t_offset = select(select(t_i.z, t_i.y, hit.y), t_i.x, hit.x);
+        next_normal = select(select(normals[2], normals[1], hit.y), normals[0], hit.x);
     }
     var vox_pos = clamp(vec3<i32>(pos), vec3<i32>(0), dim_i - vec3<i32>(1));
 
@@ -378,10 +167,13 @@ fn apply_group(
     loop {
         let i = u32(vox_pos.x + vox_pos.y * dim_i.x + vox_pos.z * dim_i.x * dim_i.y) + group.offset;
         var vcolor = unpack4x8unorm(voxels[i]);
+        let normal = next_normal;
 
         // select next voxel to move to next based on least time
         let axis = select(select(2, 1, next_t.y < next_t.z), 0, next_t.x < next_t.y && next_t.x < next_t.z);
+        next_normal = select(select(normals[2], normals[1], axis == 1), normals[0], axis == 0);
         prev_t = t;
+        // might want to make multiplication mask w select instead of dynamically indexing
         t = next_t[axis];
         vox_pos[axis] += dir_i[axis];
         next_t[axis] += inc_t[axis];
@@ -400,15 +192,17 @@ fn apply_group(
                 a = unpack4x8unorm((*colors)[depth]).a;
             }
             var move_d = depth;
-            // move further depth hits back
+            // move further depth hits back (top 10 efficient algorithms)
             while move_d < DEPTH - 1 && unpack4x8unorm((*colors)[move_d]).a != 0.0 {
                 (*colors)[move_d + 1] = (*colors)[move_d];
                 (*depths)[move_d + 1] = (*depths)[move_d];
                 move_d += 1;
             }
             // add hit
+            let light = max(dot(norm_light, normal) * 1.3 + 0.1, 0.1);
+            var color = vec4<f32>(vcolor.xyz * light, vcolor.a);
             (*depths)[depth] = full_t;
-            (*colors)[depth] = voxels[i];
+            (*colors)[depth] = pack4x8unorm(color);
             prev_a = vcolor.a;
             depth += 1;
             alpha += (1.0 - alpha) * vcolor.a;

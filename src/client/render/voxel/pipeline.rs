@@ -1,4 +1,4 @@
-use nalgebra::{Rotation3, Transform3, Translation3, Vector3};
+use nalgebra::{Projective3, Rotation3, Transform3, Translation3, UnitVector3, Vector3};
 
 use super::{color::VoxelColor, group::VoxelGroup, view::View};
 use crate::client::render::{
@@ -167,6 +167,19 @@ impl VoxelPipeline {
                 }
             }
             data.append(&mut data2);
+            let lx3 = 3;
+            let ly3 = 3;
+            let lz3 = 3;
+            let offset3 = data.len();
+            data.append(&mut vec![
+                VoxelColor {
+                    r: 255,
+                    g: 0,
+                    b: 255,
+                    a: 255,
+                };
+                lx3 * ly3 * lz3
+            ]);
             self.voxels.update(
                 device,
                 encoder,
@@ -174,33 +187,56 @@ impl VoxelPipeline {
                 data.len(),
                 &[ArrBufUpdate { offset: 0, data }],
             );
-            let thing = Translation3::new(0.0, 0.0, 20.0)
+            let proj = Projective3::identity()
+                * Translation3::new(0.0, 0.0, 20.0)
                 * Rotation3::from_axis_angle(&Vector3::y_axis(), 0.5)
                 * Translation3::new(-(lx as f32 / 2.0), -(ly as f32 / 2.0), -(lz as f32 / 2.0));
             let group = VoxelGroup {
-                transform: Transform3::identity() * thing.inverse(),
+                transform: proj,
+                transform_inv: proj.inverse(),
                 dimensions: Vector3::new(lx as u32, ly as u32, lz as u32),
                 offset: 0,
             };
-            let thing2 = Translation3::new(0.0, 2.5, 20.0)
+            let proj2 = Projective3::identity()
+                * Translation3::new(0.0, -2.1, 20.0)
                 * Translation3::new(
                     -(lx2 as f32 / 2.0),
                     -(ly2 as f32 / 2.0),
                     -(lz2 as f32 / 2.0),
                 );
             let group2 = VoxelGroup {
-                transform: Transform3::identity() * thing2.inverse(),
+                transform: proj2,
+                transform_inv: proj2.inverse(),
                 dimensions: Vector3::new(lx2 as u32, ly2 as u32, lz2 as u32),
                 offset: offset2 as u32,
             };
+            let proj3 = Projective3::identity()
+                * Translation3::new(0.0, 0.0, 10.0)
+                * Rotation3::from_axis_angle(&Vector3::y_axis(), std::f32::consts::PI / 4.0)
+                * Rotation3::from_axis_angle(
+                    &UnitVector3::new_normalize(Vector3::new(1.0, 0.0, 1.0)),
+                    std::f32::consts::PI / 4.0,
+                )
+                * Translation3::new(
+                    -(lx3 as f32 / 2.0),
+                    -(ly3 as f32 / 2.0),
+                    -(lz3 as f32 / 2.0),
+                );
+            let group3 = VoxelGroup {
+                transform: proj3,
+                transform_inv: proj3.inverse(),
+                dimensions: Vector3::new(lx3 as u32, ly3 as u32, lz3 as u32),
+                offset: offset3 as u32,
+            };
+            let groups = vec![group, group2, group3];
             self.voxel_groups.update(
                 device,
                 encoder,
                 belt,
-                2,
+                groups.len(),
                 &[ArrBufUpdate {
                     offset: 0,
-                    data: vec![group, group2],
+                    data: groups,
                 }],
             );
             self.bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {

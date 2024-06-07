@@ -1,7 +1,7 @@
-use std::sync::Arc;
-
+use smaa::{SmaaTarget, SmaaMode};
 use super::voxel::VoxelPipeline;
 use crate::client::{rsc::CLEAR_COLOR, ClientState};
+use std::sync::Arc;
 use winit::{
     dpi::PhysicalSize,
     window::{Fullscreen, Window},
@@ -17,6 +17,7 @@ pub struct Renderer<'a> {
     encoder: Option<wgpu::CommandEncoder>,
     staging_belt: wgpu::util::StagingBelt,
     voxel_pipeline: VoxelPipeline,
+    smaa_target: SmaaTarget,
 }
 
 impl<'a> Renderer<'a> {
@@ -84,6 +85,15 @@ impl<'a> Renderer<'a> {
         // doesn't affect performance much and depends on "normal" zoom
         let staging_belt = wgpu::util::StagingBelt::new(4096 * 4);
 
+        let smaa_target = SmaaTarget::new(
+            &device,
+            &queue,
+            size.width,
+            size.height,
+            surface_format,
+            SmaaMode::Smaa1X,
+        );
+
         Self {
             size,
             voxel_pipeline: VoxelPipeline::new(&device, &config.format),
@@ -94,6 +104,7 @@ impl<'a> Renderer<'a> {
             adapter,
             config,
             queue,
+            smaa_target,
         }
     }
 
@@ -110,11 +121,12 @@ impl<'a> Renderer<'a> {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self.encoder.take().unwrap_or(self.create_encoder());
+        let smaa_frame = self.smaa_target.start_frame(&self.device, &self.queue, &view);
         {
             let render_pass = &mut encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view: &smaa_frame,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(CLEAR_COLOR),
@@ -127,6 +139,7 @@ impl<'a> Renderer<'a> {
             });
             self.voxel_pipeline.draw(render_pass);
         }
+        smaa_frame.resolve();
 
         self.staging_belt.finish();
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -157,6 +170,7 @@ impl<'a> Renderer<'a> {
         self.config.width = size.width;
         self.config.height = size.height;
         self.surface.configure(&self.device, &self.config);
+        self.smaa_target.resize(&self.device, size.width, size.height);
     }
 
     pub fn size(&self) -> &PhysicalSize<u32> {

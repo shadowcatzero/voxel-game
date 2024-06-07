@@ -11,5 +11,6 @@ nalgebra = {version="0.32.5", features=["bytemuck"]}
 pollster = "0.3"
 rand = "0.8.5"
 simba = "0.8.1"
+smaa = "0.14.0"
 wgpu = "0.20"
 winit = {version="0.30", features=["serde"]}
