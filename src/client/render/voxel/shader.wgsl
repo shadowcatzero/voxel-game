@@ -201,15 +201,15 @@ fn apply_group(
             let full_pos = pos_view + dir_view * full_t;
 
             // lighting
-            let shadow = trace_light(full_pos);
+            let light = trace_light(full_pos);
             let diffuse = max(dot(norm_light, normal) * 1.3 + 0.1, 0.0);
             let ambient = 0.2;
             let specular = (exp(max(
                 -(dot(reflect(dir_view.xyz, normal), norm_light) + 0.90) * 4.0, 0.0
-            )) - 1.0) * shadow;
-            let lighting = max(diffuse * shadow, ambient);
-            let new_rgb = min(vcolor.xyz * lighting + vec3<f32>(specular), vec3<f32>(1.0));
-            let new_a = min(vcolor.a + specular, 1.0);
+            )) - 1.0) * light;
+            let lighting = max(diffuse * light.a, ambient);
+            let new_rgb = min(vcolor.xyz * lighting + specular.xyz + light.xyz * vcolor.xyz, vec3<f32>(1.0));
+            let new_a = min(vcolor.a + specular.a, 1.0);
             let color = vec4<f32>(new_rgb, new_a);
 
             // add hit
@@ -228,17 +228,19 @@ fn apply_group(
 
 fn trace_light(
     pos: vec4<f32>
-) -> f32 {
+) -> vec4<f32> {
     let dir = vec4<f32>(-normalize(GLOBAL_LIGHT), 0.0);
-    var mask = 1.0;
+    var mask = vec4<f32>(0.0);
     let start = pos + dir * .001;
     for (var gi: u32 = 0; gi < arrayLength(&voxel_groups); gi = gi + 1) {
         let color = trace_one(gi, start, dir);
-        mask -= mask * color.a;
-        if mask <= .0001 {
-            return mask;
+        mask += vec4<f32>(color.xyz * color.a * (1.0 - mask.a), (1.0 - mask.a) * color.a);
+        if mask.a > FULL_ALPHA {
+            break;
         }
     }
+    mask.a = 1.0 - mask.a;
+    mask = vec4<f32>(mask.a * mask.xyz, mask.a);
     return mask;
 }
 
