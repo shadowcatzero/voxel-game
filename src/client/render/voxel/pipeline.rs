@@ -163,7 +163,7 @@ impl VoxelPipeline {
             }
             for x in 0..lx2 {
                 for z in 0..lz2 {
-                    data2[x + z * lx2 * ly2] = VoxelColor::random();
+                    data2[x + z * lx2 * ly2] = rand::random();
                 }
             }
             data.append(&mut data2);

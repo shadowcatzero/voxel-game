@@ -37,7 +37,7 @@ fn vs_main(
     var pos = vec2<f32>(
         f32(vi % 2u) * 2.0 - 1.0,
         f32(vi / 2u) * 2.0 - 1.0,
-    );
+    ) ;
     out.clip_position = vec4<f32>(pos.x, pos.y, 0.0, 1.0);
     out.tex_coords = pos;
     return out;
@@ -71,7 +71,7 @@ fn fs_main(
 
 const ZERO3F = vec3<f32>(0.0);
 const ZERO2F = vec2<f32>(0.0);
-const DEPTH = 20;
+const DEPTH = 16u;
 const FULL_ALPHA = 0.9999;
 const GLOBAL_LIGHT = vec3<f32>(-0.5, -4.0, 2.0);
 
@@ -80,15 +80,16 @@ fn trace_full(pos: vec4<f32>, dir: vec4<f32>) -> vec4<f32> {
     var depths = array<f32,DEPTH>();
     var colors = array<u32,DEPTH>();
 
+    var hits = 0u;
     for (var gi: u32 = 0; gi < arrayLength(&voxel_groups); gi = gi + 1) {
-        apply_group(gi, pos, dir, &depths, &colors);
+        apply_group(gi, pos, dir, &depths, &colors, &hits);
     }
     var color = vec4<f32>(0.0);
-    for (var di = 0; di < DEPTH; di += 1) {
+    for (var di = 0u; di < DEPTH; di += 1u) {
         let vcolor = unpack4x8unorm(colors[di]);
-        color += vec4<f32>(vcolor.xyz * vcolor.a * (1.0 - color.a), (1.0 - color.a) * vcolor.a);
+        color += vec4<f32>(vcolor.xyz * vcolor.a, vcolor.a) * (1.0 - color.a);
         if vcolor.a == 0.0 || color.a >= FULL_ALPHA {
-            return color;
+            break;
         }
     }
     return color;
@@ -102,6 +103,7 @@ fn apply_group(
     gi: u32, pos_view: vec4<f32>, dir_view: vec4<f32>,
     depths: ptr<function, array<f32, DEPTH>>,
     colors: ptr<function, array<u32,DEPTH>>,
+    hit_len: ptr<function, u32>,
 ) {
     let group = voxel_groups[gi];
     let dim_f = vec3<f32>(group.dimensions);
@@ -162,7 +164,7 @@ fn apply_group(
     var alpha = 0.0;
     var t = 0.0;
     var prev_t = t;
-    var depth = 0;
+    var depth = 0u;
     var prev_a = 0.0;
     loop {
         let i = u32(vox_pos.x + vox_pos.y * dim_i.x + vox_pos.z * dim_i.x * dim_i.y) + group.offset;
@@ -188,15 +190,15 @@ fn apply_group(
                 if depth + 1 >= DEPTH || alpha >= FULL_ALPHA {
                     return;
                 }
-                depth += 1;
+                depth += 1u;
                 a = unpack4x8unorm((*colors)[depth]).a;
             }
-            var move_d = depth;
+            var move_d = min(*hit_len, DEPTH - 1);
             // move further depth hits back (top 10 efficient algorithms)
-            while move_d < DEPTH - 1 && unpack4x8unorm((*colors)[move_d]).a != 0.0 {
-                (*colors)[move_d + 1] = (*colors)[move_d];
-                (*depths)[move_d + 1] = (*depths)[move_d];
-                move_d += 1;
+            while move_d > depth {
+                (*colors)[move_d] = (*colors)[move_d - 1];
+                (*depths)[move_d] = (*depths)[move_d - 1];
+                move_d -= 1u;
             }
             let full_pos = pos_view + dir_view * full_t;
 
@@ -211,12 +213,14 @@ fn apply_group(
             let new_rgb = min(vcolor.xyz * lighting + specular.xyz + light.xyz * vcolor.xyz, vec3<f32>(1.0));
             let new_a = min(vcolor.a + specular.a, 1.0);
             let color = vec4<f32>(new_rgb, new_a);
+            // let color = vec4<f32>((cos(full_t * 0.1) + 1.0) * 0.5, 0.0, 0.0, new_a);
 
             // add hit
             (*depths)[depth] = full_t;
             (*colors)[depth] = pack4x8unorm(color);
             prev_a = vcolor.a;
-            depth += 1;
+            depth += 1u;
+            *hit_len += 1u;
             alpha += (1.0 - alpha) * vcolor.a;
         }
 

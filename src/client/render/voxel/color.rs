@@ -1,3 +1,5 @@
+use rand::distributions::{Distribution, Standard};
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Zeroable, bytemuck::Pod)]
 pub struct VoxelColor {
@@ -32,12 +34,15 @@ impl VoxelColor {
             a: 255,
         }
     }
-    pub fn random() -> Self {
-        Self {
-            r: rand::random(),
-            g: rand::random(),
-            b: rand::random(),
-            a: rand::random(),
+}
+
+impl Distribution<VoxelColor> for Standard {
+    fn sample<R: rand::prelude::Rng + ?Sized>(&self, rng: &mut R) -> VoxelColor {
+        VoxelColor {
+            r: rng.gen(),
+            g: rng.gen(),
+            b: rng.gen(),
+            a: rng.gen(),
         }
     }
 }
