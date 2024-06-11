@@ -52,4 +52,8 @@ impl<T: PartialEq + bytemuck::Pod> Storage<T> {
     pub fn mov(&mut self, mov: BufMove) {
         self.buf.mov(mov);
     }
+
+    pub fn len(&mut self) -> usize {
+        self.buf.len()
+    }
 }

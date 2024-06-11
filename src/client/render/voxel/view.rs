@@ -1,6 +1,4 @@
-use nalgebra::{Transform3, Translation3};
-
-use crate::client::render::uniform::UniformData;
+use nalgebra::Transform3;
 
 #[repr(C, align(16))]
 #[derive(Clone, Copy, PartialEq, bytemuck::Zeroable)]
@@ -22,29 +20,6 @@ impl Default for View {
             zoom: 1.0,
             padding: 0,
             transform: Transform3::identity(),
-        }
-    }
-}
-
-impl UniformData for View {
-    fn update(&mut self, data: &crate::client::render::RenderUpdateData) -> bool {
-        let camera = data.state.camera;
-        let new = Transform3::identity() * Translation3::from(camera.pos) * camera.orientation;
-        if new == self.transform
-            && data.size.width == self.width
-            && data.size.height == self.height
-            && camera.scale == self.zoom
-        {
-            false
-        } else {
-            *self = Self {
-                width: data.size.width,
-                height: data.size.height,
-                zoom: camera.scale,
-                padding: 0,
-                transform: new,
-            };
-            true
         }
     }
 }

@@ -1,21 +1,17 @@
-use nalgebra::{Point3, Rotation3, UnitVector3, Vector3};
+use nalgebra::{Rotation3, UnitVector3, Vector3};
 
-const DEFAULT_ASPECT_RATIO: f32 = 16. / 9.;
-
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Camera {
-    pub pos: Point3<f32>,
+    pub pos: Vector3<f32>,
     pub orientation: Rotation3<f32>,
-    pub aspect: f32,
     pub scale: f32,
 }
 
 impl Default for Camera {
     fn default() -> Self {
         Self {
-            pos: Point3::origin(),
+            pos: Vector3::zeros(),
             orientation: Rotation3::identity(),
-            aspect: DEFAULT_ASPECT_RATIO,
             scale: 1.0,
         }
     }
@@ -41,4 +37,3 @@ impl Camera {
         self.orientation * Vector3::z_axis()
     }
 }
-

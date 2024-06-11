@@ -1,48 +1,57 @@
 use std::time::Duration;
 
 use nalgebra::Rotation3;
+use ndarray::Array3;
 use winit::{dpi::PhysicalPosition, keyboard::KeyCode as Key, window::CursorGrabMode};
 
-use super::Client;
+use crate::world::component::VoxelGrid;
 
-impl Client<'_> {
+use super::{render::voxel::VoxelColor, system::voxel_grid::SpawnVoxelGrid, Client};
+
+impl Client {
     pub fn handle_input(&mut self, dt: &Duration) {
         let dt = dt.as_secs_f32();
-        let Client { input, state, .. } = self;
+        let Client {
+            input,
+            state,
+            window,
+            ..
+        } = self;
+
+        // cursor lock
         if input.just_pressed(Key::Escape) {
-            if let Some(window) = &self.window {
-                self.grabbed_cursor = !self.grabbed_cursor;
-                if self.grabbed_cursor {
-                    window.set_cursor_visible(false);
-                    window
-                        .set_cursor_grab(CursorGrabMode::Locked)
-                        .map(|_| {
-                            self.keep_cursor = false;
-                        })
-                        .or_else(|_| {
-                            self.keep_cursor = true;
-                            window.set_cursor_grab(CursorGrabMode::Confined)
-                        })
-                        .expect("cursor lock");
-                } else {
-                    self.keep_cursor = false;
-                    window.set_cursor_visible(true);
-                    window
-                        .set_cursor_grab(CursorGrabMode::None)
-                        .expect("cursor unlock");
-                };
-            }
+            self.grabbed_cursor = !self.grabbed_cursor;
+            if self.grabbed_cursor {
+                window.set_cursor_visible(false);
+                window
+                    .set_cursor_grab(CursorGrabMode::Locked)
+                    .map(|_| {
+                        self.keep_cursor = false;
+                    })
+                    .or_else(|_| {
+                        self.keep_cursor = true;
+                        window.set_cursor_grab(CursorGrabMode::Confined)
+                    })
+                    .expect("cursor lock");
+            } else {
+                self.keep_cursor = false;
+                window.set_cursor_visible(true);
+                window
+                    .set_cursor_grab(CursorGrabMode::None)
+                    .expect("cursor unlock");
+            };
             return;
         }
+        if self.keep_cursor {
+            let size = window.inner_size();
+            window
+                .set_cursor_position(PhysicalPosition::new(size.width / 2, size.height / 2))
+                .expect("cursor move");
+        }
+
+        // camera orientation
+        let old_camera = state.camera;
         if self.grabbed_cursor {
-            if let Some(window) = &self.window {
-                if self.keep_cursor {
-                    let size = window.inner_size();
-                    window
-                        .set_cursor_position(PhysicalPosition::new(size.width / 2, size.height / 2))
-                        .expect("cursor move");
-                }
-            }
             let delta = input.mouse_delta * 0.003;
             if delta.x != 0.0 {
                 state.camera.orientation = Rotation3::from_axis_angle(&state.camera.up(), delta.x)
@@ -70,8 +79,9 @@ impl Client<'_> {
             state.camera_scroll += input.scroll_delta;
             state.camera.scale = (state.camera_scroll * 0.2).exp();
         }
-        let move_dist = 10.0 * dt;
 
+        // camera position
+        let move_dist = 10.0 * dt;
         if input.pressed(Key::KeyW) {
             state.camera.pos += *state.camera.forward() * move_dist;
         }
@@ -89,6 +99,22 @@ impl Client<'_> {
         }
         if input.pressed(Key::ShiftLeft) {
             state.camera.pos += *state.camera.down() * move_dist;
+        }
+        if state.camera != old_camera {
+            self.renderer
+                .send(super::render::RenderMessage::ViewUpdate(state.camera))
+                .expect("AAAAAAA");
+        }
+
+        // fun
+        if input.just_pressed(Key::KeyF) {
+            self.world.send(SpawnVoxelGrid {
+                pos: state.camera.pos + 135.0 * 2.0 * *state.camera.forward(),
+                orientation: state.camera.orientation,
+                grid: VoxelGrid::new(Array3::from_shape_fn((135, 135, 135), |(..)| {
+                    VoxelColor::white()
+                })),
+            })
         }
     }
 }

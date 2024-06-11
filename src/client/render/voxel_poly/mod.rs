@@ -1,9 +1,10 @@
-use nalgebra::{Projective3, Rotation3, Transform3, Translation3, UnitVector3, Vector3};
+use super::uniform::Uniform;
+use nalgebra::{Projective3, Translation3, Rotation3};
 
-use super::{color::VoxelColor, group::VoxelGroup, view::View};
-use crate::client::render::{
-    buf::ArrBufUpdate, storage::Storage, uniform::Uniform, RenderUpdateData,
-};
+mod view;
+mod color;
+mod vertex;
+mod square;
 
 pub struct VoxelPipeline {
     pipeline: wgpu::RenderPipeline,

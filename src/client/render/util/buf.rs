@@ -53,13 +53,11 @@ impl<T: bytemuck::Pod> ArrBuf<T> {
                 &self.buffer,
                 (update.offset * std::mem::size_of::<T>()) as BufferAddress,
                 unsafe {
-                    std::num::NonZeroU64::new_unchecked(
-                        (update.data.len() * std::mem::size_of::<T>()) as u64,
-                    )
+                    std::num::NonZeroU64::new_unchecked(std::mem::size_of_val(update.data) as u64)
                 },
                 device,
             );
-            view.copy_from_slice(bytemuck::cast_slice(&update.data));
+            view.copy_from_slice(bytemuck::cast_slice(update.data));
         }
         resized
     }
@@ -100,11 +98,15 @@ impl<T: bytemuck::Pod> ArrBuf<T> {
     pub fn mov(&mut self, mov: BufMove) {
         self.moves.push(mov);
     }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
 }
 
-pub struct ArrBufUpdate<T> {
+pub struct ArrBufUpdate<'a, T> {
     pub offset: usize,
-    pub data: Vec<T>,
+    pub data: &'a [T],
 }
 
 #[derive(Clone, Copy, Debug)]

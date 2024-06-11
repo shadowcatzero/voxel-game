@@ -167,7 +167,7 @@ fn apply_group(
     var depth = 0u;
     var prev_a = 0.0;
     loop {
-        let i = u32(vox_pos.x + vox_pos.y * dim_i.x + vox_pos.z * dim_i.x * dim_i.y) + group.offset;
+        let i = u32(vox_pos.x * dim_i.y * dim_i.z + vox_pos.y * dim_i.z + vox_pos.z) + group.offset;
         var vcolor = unpack4x8unorm(voxels[i]);
         let normal = next_normal;
 
@@ -204,7 +204,7 @@ fn apply_group(
 
             // lighting
             let light = trace_light(full_pos);
-            let diffuse = max(dot(norm_light, normal) * 1.3 + 0.1, 0.0);
+            let diffuse = max(dot(norm_light, normal) * ((dot(dir_view.xyz, normal) + 1.0) / 2.0 * .7 + .3) * 1.3 + 0.1, 0.0);
             let ambient = 0.2;
             let specular = (exp(max(
                 -(dot(reflect(dir_view.xyz, normal), norm_light) + 0.90) * 4.0, 0.0
@@ -297,7 +297,7 @@ fn trace_one(gi: u32, pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
     var next_t = inc_t * abs(pos - corner);
     var color = vec4<f32>(0.0);
     loop {
-        let i = u32(vox_pos.x + vox_pos.y * dim_i.x + vox_pos.z * dim_i.x * dim_i.y) + group.offset;
+        let i = u32(vox_pos.x * dim_i.y * dim_i.z + vox_pos.y * dim_i.z + vox_pos.z) + group.offset;
         var vcolor = unpack4x8unorm(voxels[i]);
 
         // select next voxel to move to next based on least time

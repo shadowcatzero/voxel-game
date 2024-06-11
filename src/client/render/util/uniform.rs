@@ -1,33 +1,28 @@
+use std::marker::PhantomData;
+
 use wgpu::util::DeviceExt;
 
-use super::RenderUpdateData;
-
-pub trait UniformData {
-    fn update(&mut self, data: &RenderUpdateData) -> bool;
-}
-
-pub struct Uniform<T: bytemuck::Pod + PartialEq + UniformData> {
-    data: T,
+pub struct Uniform<T: bytemuck::Pod> {
     buffer: wgpu::Buffer,
     binding: u32,
+    ty: PhantomData<T>,
 }
 
-impl<T: Default + PartialEq + bytemuck::Pod + UniformData> Uniform<T> {
+impl<T: Default + bytemuck::Pod> Uniform<T> {
     pub fn init(device: &wgpu::Device, name: &str, binding: u32) -> Self {
-        let data = T::default();
         Self {
-            data,
             buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some(&(name.to_owned() + " Uniform Buf")),
-                contents: bytemuck::cast_slice(&[data]),
+                contents: bytemuck::cast_slice(&[T::default()]),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             }),
             binding,
+            ty: PhantomData,
         }
     }
 }
 
-impl<T: PartialEq + bytemuck::Pod + UniformData> Uniform<T> {
+impl<T: PartialEq + bytemuck::Pod> Uniform<T> {
     pub fn bind_group_layout_entry(&self) -> wgpu::BindGroupLayoutEntry {
         wgpu::BindGroupLayoutEntry {
             binding: self.binding,
@@ -51,22 +46,18 @@ impl<T: PartialEq + bytemuck::Pod + UniformData> Uniform<T> {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         belt: &mut wgpu::util::StagingBelt,
-        update_data: &RenderUpdateData,
+        data: T,
     ) {
-        if self.data.update(update_data) {
-            let slice = &[self.data];
-            let mut view = belt.write_buffer(
-                encoder,
-                &self.buffer,
-                0,
-                unsafe {
-                    std::num::NonZeroU64::new_unchecked(
-                        (slice.len() * std::mem::size_of::<T>()) as u64,
-                    )
-                },
-                device,
-            );
-            view.copy_from_slice(bytemuck::cast_slice(slice));
-        }
+        let slice = &[data];
+        let mut view = belt.write_buffer(
+            encoder,
+            &self.buffer,
+            0,
+            unsafe {
+                std::num::NonZeroU64::new_unchecked((slice.len() * std::mem::size_of::<T>()) as u64)
+            },
+            device,
+        );
+        view.copy_from_slice(bytemuck::cast_slice(slice));
     }
 }

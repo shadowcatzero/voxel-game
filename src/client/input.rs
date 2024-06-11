@@ -1,15 +1,14 @@
 use std::collections::HashSet;
 
+use nalgebra::Vector2;
 use winit::{
     event::{DeviceEvent, ElementState, MouseButton, MouseScrollDelta, WindowEvent},
     keyboard::{KeyCode, PhysicalKey},
 };
 
-use crate::util::math::{Pos2f, Vec2f};
-
 pub struct Input {
-    pub mouse_pixel_pos: Pos2f,
-    pub mouse_delta: Vec2f,
+    pub mouse_pixel_pos: Vector2<f32>,
+    pub mouse_delta: Vector2<f32>,
 
     pressed: HashSet<KeyCode>,
     just_pressed: HashSet<KeyCode>,
@@ -24,8 +23,8 @@ pub struct Input {
 impl Input {
     pub fn new() -> Self {
         Self {
-            mouse_pixel_pos: Pos2f::origin(),
-            mouse_delta: Vec2f::zeros(),
+            mouse_pixel_pos: Vector2::zeros(),
+            mouse_delta: Vector2::zeros(),
             pressed: HashSet::new(),
             just_pressed: HashSet::new(),
             mouse_pressed: HashSet::new(),
@@ -43,7 +42,7 @@ impl Input {
                 };
             }
             DeviceEvent::MouseMotion { delta } => {
-                self.mouse_delta += Vec2f::new(delta.0 as f32, delta.1 as f32);
+                self.mouse_delta += Vector2::new(delta.0 as f32, delta.1 as f32);
             }
             _ => (),
         }
@@ -72,7 +71,7 @@ impl Input {
                 self.mouse_pressed.clear();
             }
             WindowEvent::CursorMoved { position, .. } => {
-                self.mouse_pixel_pos = Pos2f::new(position.x as f32, position.y as f32);
+                self.mouse_pixel_pos = Vector2::new(position.x as f32, position.y as f32);
             }
             WindowEvent::MouseInput { button, state, .. } => match state {
                 ElementState::Pressed => {
@@ -90,10 +89,16 @@ impl Input {
 
     pub fn end(&mut self) {
         self.scroll_delta = 0.0;
-        self.mouse_delta = Vec2f::zeros();
+        self.mouse_delta = Vector2::zeros();
         self.just_pressed.clear();
         self.mouse_just_pressed.clear();
         self.mouse_just_released.clear();
+    }
+
+    pub fn clear(&mut self) {
+        self.pressed.clear();
+        self.mouse_pressed.clear();
+        self.end();
     }
 
     #[allow(dead_code)]
