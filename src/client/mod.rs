@@ -68,7 +68,7 @@ impl Client {
         self.input.end();
 
         if self.exit {
-            self.renderer.send(RenderMessage::Exit).expect("AAAA");
+            let _ = self.renderer.send(RenderMessage::Exit);
             // you know I'd like to do a timeout here...
             // only because I have an NVIDIA GPU HELP
             self.render_handle

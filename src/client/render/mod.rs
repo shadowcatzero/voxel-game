@@ -8,10 +8,7 @@ use super::camera::Camera;
 use crate::client::rsc::{CLEAR_COLOR, FRAME_TIME};
 use nalgebra::Vector2;
 use smaa::{SmaaMode, SmaaTarget};
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 use voxel::VoxelPipeline;
 use winit::dpi::PhysicalSize;
 
