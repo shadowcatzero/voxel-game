@@ -34,10 +34,21 @@ pub struct CreateVoxelGrid {
 impl Renderer<'_> {
     pub fn spawn(window: Arc<Window>) -> (RendererChannel, JoinHandle<()>) {
         let (s, mut r) = channel();
+
+        let size = window.inner_size();
+
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::PRIMARY,
+            ..Default::default()
+        });
+
+        let surface = instance
+            .create_surface(window)
+            .expect("Could not create window surface!");
         (
             s,
             std::thread::spawn(move || {
-                Self::new(window.clone()).start(&mut r);
+                Self::new(instance, surface, size).start(&mut r);
             }),
         )
     }

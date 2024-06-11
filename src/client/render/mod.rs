@@ -13,10 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 use voxel::VoxelPipeline;
-use winit::{
-    dpi::PhysicalSize,
-    window::{Fullscreen, Window},
-};
+use winit::dpi::PhysicalSize;
 
 pub struct Renderer<'a> {
     size: Vector2<u32>,
@@ -34,23 +31,11 @@ pub struct Renderer<'a> {
 }
 
 impl<'a> Renderer<'a> {
-    pub fn new(window: Arc<Window>) -> Self {
-        let fullscreen = false;
-        if fullscreen {
-            window.set_fullscreen(Some(Fullscreen::Borderless(None)));
-        }
-
-        let size = window.inner_size();
-
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::PRIMARY,
-            ..Default::default()
-        });
-
-        let surface = instance
-            .create_surface(window)
-            .expect("Could not create window surface!");
-
+    pub fn new(
+        instance: wgpu::Instance,
+        surface: wgpu::Surface<'a>,
+        size: PhysicalSize<u32>,
+    ) -> Self {
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::default(),
             compatible_surface: Some(&surface),
