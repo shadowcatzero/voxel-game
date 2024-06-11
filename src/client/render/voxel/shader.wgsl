@@ -1,5 +1,9 @@
 // Vertex shader
 
+struct GlobalLight {
+    dir: vec3<f32>,
+};
+
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) tex_coords: vec2<f32>,
@@ -26,6 +30,8 @@ var<uniform> view: View;
 var<storage, read> voxels: array<u32>;
 @group(0) @binding(2)
 var<storage, read> voxel_groups: array<VoxelGroup>;
+@group(0) @binding(3)
+var<storage, read> global_lights: array<GlobalLight>;
 
 @vertex
 fn vs_main(
@@ -62,7 +68,7 @@ fn fs_main(
     let dir = view.transform * vec4<f32>(normalize(pixel_pos), 0.0);
 
     var color = trace_full(pos, dir);
-    let light_mult = clamp((-dot(dir.xyz, normalize(GLOBAL_LIGHT)) - 0.99) * 200.0, 0.0, 1.0);
+    let light_mult = clamp((-dot(dir.xyz, global_lights[0].dir) - 0.99) * 200.0, 0.0, 1.0);
     let sky_color = light_mult * vec3<f32>(1.0, 1.0, 1.0);
     color += vec4<f32>(sky_color * (1.0 - color.a), 1.0 - color.a);
     color.a = 1.0;
@@ -73,7 +79,6 @@ const ZERO3F = vec3<f32>(0.0);
 const ZERO2F = vec2<f32>(0.0);
 const DEPTH = 16u;
 const FULL_ALPHA = 0.9999;
-const GLOBAL_LIGHT = vec3<f32>(-0.5, -4.0, 2.0);
 
 fn trace_full(pos: vec4<f32>, dir: vec4<f32>) -> vec4<f32> {
     // GPUs hate this
@@ -124,7 +129,6 @@ fn apply_group(
         (group.transform * vec4<f32>(0.0, 0.0, dir_if.z, 0.0)).xyz,
     );
     var next_normal = vec3<f32>(0.0, 0.0, 0.0);
-    let norm_light = normalize(GLOBAL_LIGHT);
 
     // find where ray intersects with group
     let plane_point = (vec3<f32>(1.0) - dir_if) / 2.0 * dim_f;
@@ -204,10 +208,10 @@ fn apply_group(
 
             // lighting
             let light = trace_light(full_pos);
-            let diffuse = max(dot(norm_light, normal) * ((dot(dir_view.xyz, normal) + 1.0) / 2.0 * .7 + .3) * 1.3 + 0.1, 0.0);
+            let diffuse = max(dot(global_lights[0].dir, normal) * ((dot(dir_view.xyz, normal) + 1.0) / 2.0 * .7 + .3) * 1.3 + 0.1, 0.0);
             let ambient = 0.2;
             let specular = (exp(max(
-                -(dot(reflect(dir_view.xyz, normal), norm_light) + 0.90) * 4.0, 0.0
+                -(dot(reflect(dir_view.xyz, normal), global_lights[0].dir) + 0.90) * 4.0, 0.0
             )) - 1.0) * light;
             let lighting = max(diffuse * light.a, ambient);
             let new_rgb = min(vcolor.xyz * lighting + specular.xyz + light.xyz * vcolor.xyz, vec3<f32>(1.0));
@@ -233,7 +237,7 @@ fn apply_group(
 fn trace_light(
     pos: vec4<f32>
 ) -> vec4<f32> {
-    let dir = vec4<f32>(-normalize(GLOBAL_LIGHT), 0.0);
+    let dir = vec4<f32>(-global_lights[0].dir, 0.0);
     var mask = vec4<f32>(0.0);
     let start = pos + dir * .001;
     for (var gi: u32 = 0; gi < arrayLength(&voxel_groups); gi = gi + 1) {

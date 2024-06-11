@@ -17,6 +17,17 @@ impl<T: PartialEq + bytemuck::Pod> Storage<T> {
             binding,
         }
     }
+    pub fn init_with(device: &wgpu::Device, label: &str, binding: u32, data: &[T]) -> Self {
+        Self {
+            buf: ArrBuf::init_with(
+                device,
+                &(label.to_owned() + " Storage"),
+                BufferUsages::STORAGE,
+                data
+            ),
+            binding,
+        }
+    }
 }
 
 impl<T: PartialEq + bytemuck::Pod> Storage<T> {

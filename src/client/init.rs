@@ -41,7 +41,7 @@ pub fn init_world(world: &mut World) {
         orientation: Rotation3::identity(),
         grid: VoxelGrid::new(Array3::from_shape_fn(dim, |(x, y, z)| {
             if y == 0 {
-                rand::random()
+                VoxelColor::random()
             } else if (y == dim.1 - 1) && (x == 0 || x == dim.0 - 1 || z == 0 || z == dim.2 - 1) {
                 VoxelColor {
                     r: 255,

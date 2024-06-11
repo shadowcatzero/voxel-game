@@ -44,7 +44,6 @@ impl Client {
 
         init_world(&mut world);
         let state = ClientState::new();
-        // render_channel.send(RenderMessage::ViewUpdate(state.camera)).expect("GRRRR");
 
         Self {
             window,
@@ -70,6 +69,8 @@ impl Client {
 
         if self.exit {
             self.renderer.send(RenderMessage::Exit).expect("AAAA");
+            // you know I'd like to do a timeout here...
+            // only because I have an NVIDIA GPU HELP
             self.render_handle
                 .take()
                 .expect("uh oh")

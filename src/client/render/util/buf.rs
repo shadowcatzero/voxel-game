@@ -1,5 +1,5 @@
 use std::marker::PhantomData;
-use wgpu::{BufferAddress, BufferUsages};
+use wgpu::{util::DeviceExt, BufferAddress, BufferUsages};
 
 pub struct ArrBuf<T: bytemuck::Pod> {
     len: usize,
@@ -74,6 +74,18 @@ impl<T: bytemuck::Pod> ArrBuf<T> {
         }
     }
 
+    pub fn init_with(device: &wgpu::Device, label: &str, usage: BufferUsages, data: &[T]) -> Self {
+        let label = &(label.to_owned() + " Buffer");
+        Self {
+            len: data.len(),
+            buffer: Self::init_buf_with(device, label, usage, data),
+            label: label.to_string(),
+            typ: PhantomData,
+            usage,
+            moves: Vec::new(),
+        }
+    }
+
     fn init_buf(
         device: &wgpu::Device,
         label: &str,
@@ -88,6 +100,19 @@ impl<T: bytemuck::Pod> ArrBuf<T> {
             usage: usage | BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
             size: (size * std::mem::size_of::<T>()) as u64,
             mapped_at_creation: false,
+        })
+    }
+
+    fn init_buf_with(
+        device: &wgpu::Device,
+        label: &str,
+        usage: BufferUsages,
+        data: &[T],
+    ) -> wgpu::Buffer {
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(label),
+            usage: usage | BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
+            contents: bytemuck::cast_slice(data),
         })
     }
 

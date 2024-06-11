@@ -1,13 +1,14 @@
-mod grid;
-mod view;
 mod color;
+mod grid;
 mod group;
+mod light;
+mod view;
 
 pub use color::*;
 
-use nalgebra::{Projective3, Transform3, Translation3, Vector2};
+use light::GlobalLight;
+use nalgebra::{Projective3, Transform3, Translation3, Vector2, Vector3};
 
-use {group::VoxelGroup, view::View};
 use crate::client::{
     camera::Camera,
     render::{
@@ -15,6 +16,7 @@ use crate::client::{
         CreateVoxelGrid,
     },
 };
+use {group::VoxelGroup, view::View};
 
 pub struct VoxelPipeline {
     pipeline: wgpu::RenderPipeline,
@@ -23,6 +25,7 @@ pub struct VoxelPipeline {
     bind_group: wgpu::BindGroup,
     voxel_groups: Storage<VoxelGroup>,
     voxels: Storage<VoxelColor>,
+    global_lights: Storage<GlobalLight>,
 }
 
 impl VoxelPipeline {
@@ -33,9 +36,17 @@ impl VoxelPipeline {
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
-        let view = Uniform::<View>::init(device, "view", 0);
+        let view = Uniform::init(device, "view", 0);
         let voxels = Storage::init(device, "voxels", 1);
         let voxel_groups = Storage::init(device, "voxel groups", 2);
+        let global_lights = Storage::init_with(
+            device,
+            "global lights",
+            3,
+            &[GlobalLight {
+                direction: Vector3::new(-0.5, -4.0, 2.0).normalize(),
+            }],
+        );
 
         // bind groups
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -43,6 +54,7 @@ impl VoxelPipeline {
                 view.bind_group_layout_entry(),
                 voxels.bind_group_layout_entry(),
                 voxel_groups.bind_group_layout_entry(),
+                global_lights.bind_group_layout_entry(),
             ],
             label: Some("tile_bind_group_layout"),
         });
@@ -53,6 +65,7 @@ impl VoxelPipeline {
                 view.bind_group_entry(),
                 voxels.bind_group_entry(),
                 voxel_groups.bind_group_entry(),
+                global_lights.bind_group_entry(),
             ],
             label: Some("tile_bind_group"),
         });
@@ -109,6 +122,7 @@ impl VoxelPipeline {
             bind_group_layout,
             voxels,
             voxel_groups,
+            global_lights,
         }
     }
 
@@ -156,6 +170,7 @@ impl VoxelPipeline {
                 self.view.bind_group_entry(),
                 self.voxels.bind_group_entry(),
                 self.voxel_groups.bind_group_entry(),
+                self.global_lights.bind_group_entry(),
             ],
             label: Some("tile_bind_group"),
         });

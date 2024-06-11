@@ -1,13 +1,15 @@
 use rand::distributions::{Distribution, Standard};
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Zeroable, bytemuck::Pod)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Zeroable)]
 pub struct VoxelColor {
     pub r: u8,
     pub g: u8,
     pub b: u8,
     pub a: u8,
 }
+
+unsafe impl bytemuck::Pod for VoxelColor {}
 
 impl VoxelColor {
     pub fn none() -> Self {
@@ -33,6 +35,9 @@ impl VoxelColor {
             b: 255,
             a: 255,
         }
+    }
+    pub fn random() -> Self {
+        rand::random()
     }
 }
 
