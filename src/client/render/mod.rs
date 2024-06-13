@@ -17,6 +17,7 @@ pub struct Renderer<'a> {
     surface: wgpu::Surface<'a>,
     device: wgpu::Device,
     queue: wgpu::Queue,
+    encoder: wgpu::CommandEncoder,
     config: wgpu::SurfaceConfiguration,
     staging_belt: wgpu::util::StagingBelt,
     voxel_pipeline: VoxelPipeline,
@@ -96,6 +97,7 @@ impl<'a> Renderer<'a> {
             voxel_pipeline: VoxelPipeline::new(&device, &config.format),
             staging_belt,
             surface,
+            encoder: Self::create_encoder(&device),
             device,
             config,
             queue,
@@ -105,15 +107,14 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    fn create_encoder(&mut self) -> wgpu::CommandEncoder {
-        self.device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Render Encoder"),
-            })
+    fn create_encoder(device: &wgpu::Device) -> wgpu::CommandEncoder {
+        device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Render Encoder"),
+        })
     }
 
-    pub fn draw(&mut self, encoder: &mut wgpu::CommandEncoder) {
-        let mut encoder = std::mem::replace(encoder, self.create_encoder());
+    pub fn draw(&mut self) {
+        let mut encoder = std::mem::replace(&mut self.encoder, Self::create_encoder(&self.device));
         let output = self.surface.get_current_texture().unwrap();
         let view = output
             .texture
@@ -146,7 +147,7 @@ impl<'a> Renderer<'a> {
         self.staging_belt.recall();
     }
 
-    pub fn resize(&mut self, size: PhysicalSize<u32>, encoder: &mut wgpu::CommandEncoder) {
+    pub fn resize(&mut self, size: PhysicalSize<u32>) {
         self.size = Vector2::new(size.width, size.height);
         self.config.width = size.width;
         self.config.height = size.height;
@@ -156,7 +157,7 @@ impl<'a> Renderer<'a> {
 
         self.voxel_pipeline.update_view(
             &self.device,
-            encoder,
+            &mut self.encoder,
             &mut self.staging_belt,
             self.size,
             &self.camera,

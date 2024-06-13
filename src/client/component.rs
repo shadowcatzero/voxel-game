@@ -1,18 +1,18 @@
 use std::ops::{Deref, DerefMut};
 
-use evenio::component::Component;
+use bevy_ecs::system::Resource;
 
 use super::render::RendererChannel;
 
-#[derive(Component)]
-pub struct RenderComponent(pub RendererChannel);
-impl Deref for RenderComponent {
+#[derive(Resource)]
+pub struct RenderResource(pub RendererChannel);
+impl Deref for RenderResource {
     type Target = RendererChannel;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
-impl DerefMut for RenderComponent {
+impl DerefMut for RenderResource {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }

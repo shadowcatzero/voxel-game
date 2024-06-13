@@ -12,7 +12,7 @@ use std::{
 };
 use winit::{dpi::PhysicalSize, window::Window};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum RenderMessage {
     Resize(PhysicalSize<u32>),
     Draw,
@@ -21,9 +21,7 @@ pub enum RenderMessage {
     Exit,
 }
 
-pub type RendererChannel = Sender<RenderMessage>;
-
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CreateVoxelGrid {
     pub pos: Vector3<f32>,
     pub orientation: Rotation3<f32>,
@@ -46,7 +44,7 @@ impl Renderer<'_> {
             .create_surface(window)
             .expect("Could not create window surface!");
         (
-            s,
+            RendererChannel(s),
             std::thread::spawn(move || {
                 Self::new(instance, surface, size).start(&mut r);
             }),
@@ -54,25 +52,24 @@ impl Renderer<'_> {
     }
 
     pub fn start(&mut self, reciever: &mut Receiver<RenderMessage>) {
-        let mut encoder = self.create_encoder();
         let mut new_camera = false;
         'main: loop {
             let now = Instant::now();
-            while let Ok(msg) = reciever.try_recv() {
+            for msg in reciever.try_iter() {
                 match msg {
                     RenderMessage::CreateVoxelGrid(desc) => {
                         self.voxel_pipeline.add_group(
                             &self.device,
-                            &mut encoder,
+                            &mut self.encoder,
                             &mut self.staging_belt,
                             desc,
                         );
                     }
                     RenderMessage::Draw => {
-                        self.draw(&mut encoder);
+                        self.draw();
                     }
                     RenderMessage::Resize(size) => {
-                        self.resize(size, &mut encoder);
+                        self.resize(size);
                     }
                     RenderMessage::Exit => {
                         break 'main;
@@ -88,15 +85,24 @@ impl Renderer<'_> {
                 if new_camera {
                     self.voxel_pipeline.update_view(
                         &self.device,
-                        &mut encoder,
+                        &mut self.encoder,
                         &mut self.staging_belt,
                         self.size,
                         &self.camera,
                     );
                     new_camera = false;
                 }
-                self.draw(&mut encoder);
+                self.draw();
             }
         }
+    }
+}
+
+#[derive(Clone)]
+pub struct RendererChannel(Sender<RenderMessage>);
+impl RendererChannel {
+    pub fn send(&self, msg: RenderMessage) {
+        // TODO: handle this properly
+        self.0.send(msg).expect("Failed to send renderer message");
     }
 }

@@ -1,9 +1,4 @@
-use std::sync::Arc;
-
-use winit::{
-    application::ApplicationHandler, event::WindowEvent, event_loop::ControlFlow,
-    window::WindowAttributes,
-};
+use winit::{application::ApplicationHandler, event::WindowEvent, event_loop::ControlFlow};
 
 use super::Client;
 
@@ -24,13 +19,7 @@ impl ClientApp {
 impl ApplicationHandler for ClientApp {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         if self.client.is_none() {
-            let window = Arc::new(
-                event_loop
-                    .create_window(WindowAttributes::default())
-                    .expect("Failed to create window"),
-            );
-            let client = Client::new(window);
-            self.client = Some(client);
+            self.client = Some(Client::new(event_loop));
         }
         event_loop.set_control_flow(ControlFlow::Poll);
     }
@@ -54,8 +43,6 @@ impl ApplicationHandler for ClientApp {
     }
 
     fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        if self.client().update() {
-            event_loop.exit();
-        }
+        self.client().update(event_loop);
     }
 }

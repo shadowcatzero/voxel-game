@@ -1,14 +1,15 @@
-use std::ops::{Deref, DerefMut, Range};
+use std::ops::Range;
 
-use evenio::component::Component;
+use bevy_derive::{Deref, DerefMut};
+use bevy_ecs::{bundle::Bundle, component::Component};
 use nalgebra::{Rotation3, Vector3};
 use ndarray::{Array3, ArrayBase, Dim, SliceArg};
 
 use crate::client::render::voxel::VoxelColor;
 
-#[derive(Debug, Component, Default)]
+#[derive(Debug, Component, Default, Deref, DerefMut)]
 pub struct Pos(pub Vector3<f32>);
-#[derive(Debug, Component, Default)]
+#[derive(Debug, Component, Default, Deref, DerefMut)]
 pub struct Orientation(pub Rotation3<f32>);
 
 pub type VoxelGrid = TrackedGrid<VoxelColor>;
@@ -61,31 +62,14 @@ impl From<Rotation3<f32>> for Orientation {
     }
 }
 
-// reref boilerplate :pensive:
+#[derive(Bundle)]
+pub struct VoxelGridBundle {
+    pub pos: Pos,
+    pub orientation: Orientation,
+    pub grid: VoxelGrid,
+}
 
-impl Deref for Pos {
-    type Target = Vector3<f32>;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-impl DerefMut for Pos {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-impl Deref for Orientation {
-    type Target = Rotation3<f32>;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-impl DerefMut for Orientation {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-impl<T> Deref for TrackedGrid<T> {
+impl<T> std::ops::Deref for TrackedGrid<T> {
     type Target = Array3<T>;
     fn deref(&self) -> &Self::Target {
         &self.data

@@ -1,17 +1,17 @@
 use crate::world::component::VoxelGrid;
-use evenio::world::World;
+use bevy_ecs::world::World;
 use nalgebra::{Rotation3, UnitVector3, Vector3};
 use ndarray::Array3;
 
 use crate::client::render::voxel::VoxelColor;
 
-use super::system::voxel_grid::SpawnVoxelGrid;
+use super::component::VoxelGridBundle;
 
-pub fn init_world(world: &mut World) {
+pub fn generate(world: &mut World) {
     let dim = (15, 10, 10);
-    world.send(SpawnVoxelGrid {
-        pos: Vector3::new(0.0, 0.0, 20.0),
-        orientation: Rotation3::from_axis_angle(&Vector3::y_axis(), 0.5),
+    world.spawn(VoxelGridBundle {
+        pos: Vector3::new(0.0, 0.0, 20.0).into(),
+        orientation: Rotation3::from_axis_angle(&Vector3::y_axis(), 0.5).into(),
         grid: VoxelGrid::new(Array3::from_shape_fn(dim, |(x, y, z)| {
             if x == z && x == y {
                 VoxelColor::white()
@@ -36,9 +36,9 @@ pub fn init_world(world: &mut World) {
     });
 
     let dim = (1000, 2, 1000);
-    world.send(SpawnVoxelGrid {
-        pos: Vector3::new(0.0, -2.1, 0.0),
-        orientation: Rotation3::identity(),
+    world.spawn(VoxelGridBundle {
+        pos: Vector3::new(0.0, -2.1, 0.0).into(),
+        orientation: Rotation3::identity().into(),
         grid: VoxelGrid::new(Array3::from_shape_fn(dim, |(x, y, z)| {
             if y == 0 {
                 VoxelColor::random()
@@ -56,13 +56,14 @@ pub fn init_world(world: &mut World) {
     });
 
     let dim = (3, 3, 3);
-    world.send(SpawnVoxelGrid {
-        pos: Vector3::new(0.0, 0.0, 16.5),
-        orientation: Rotation3::from_axis_angle(&Vector3::y_axis(), std::f32::consts::PI / 4.0)
+    world.spawn(VoxelGridBundle {
+        pos: Vector3::new(0.0, 0.0, 16.5).into(),
+        orientation: (Rotation3::from_axis_angle(&Vector3::y_axis(), std::f32::consts::PI / 4.0)
             * Rotation3::from_axis_angle(
                 &UnitVector3::new_normalize(Vector3::new(1.0, 0.0, 1.0)),
                 std::f32::consts::PI / 4.0,
-            ),
+            ))
+        .into(),
         grid: VoxelGrid::new(Array3::from_shape_fn(dim, |(..)| VoxelColor {
             r: 255,
             g: 0,

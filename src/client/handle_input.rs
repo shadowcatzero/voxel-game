@@ -4,9 +4,9 @@ use nalgebra::Rotation3;
 use ndarray::Array3;
 use winit::{dpi::PhysicalPosition, keyboard::KeyCode as Key, window::CursorGrabMode};
 
-use crate::world::component::VoxelGrid;
+use crate::world::component::{VoxelGrid, VoxelGridBundle};
 
-use super::{render::voxel::VoxelColor, system::voxel_grid::SpawnVoxelGrid, Client};
+use super::{render::voxel::VoxelColor, Client};
 
 impl Client {
     pub fn handle_input(&mut self, dt: &Duration) {
@@ -102,19 +102,18 @@ impl Client {
         }
         if state.camera != old_camera {
             self.renderer
-                .send(super::render::RenderMessage::ViewUpdate(state.camera))
-                .expect("AAAAAAA");
+                .send(super::render::RenderMessage::ViewUpdate(state.camera));
         }
 
         // fun
         if input.just_pressed(Key::KeyF) {
-            self.world.send(SpawnVoxelGrid {
-                pos: state.camera.pos + 135.0 * 2.0 * *state.camera.forward(),
-                orientation: state.camera.orientation,
+            self.world.spawn(VoxelGridBundle {
+                pos: (state.camera.pos + 135.0 * 2.0 * *state.camera.forward()).into(),
+                orientation: state.camera.orientation.into(),
                 grid: VoxelGrid::new(Array3::from_shape_fn((135, 135, 135), |(..)| {
                     VoxelColor::white()
                 })),
-            })
+            });
         }
     }
 }
