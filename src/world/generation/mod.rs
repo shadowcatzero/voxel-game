@@ -5,11 +5,11 @@ use ndarray::Array3;
 
 use crate::client::render::voxel::VoxelColor;
 
-use super::component::VoxelGridBundle;
+use super::component::{Synced, VoxelGridBundle};
 
 pub fn generate(world: &mut World) {
     let dim = (15, 10, 10);
-    world.spawn(VoxelGridBundle {
+    world.spawn((VoxelGridBundle {
         pos: Vector3::new(0.0, 0.0, 20.0).into(),
         orientation: Rotation3::from_axis_angle(&Vector3::y_axis(), 0.5).into(),
         grid: VoxelGrid::new(Array3::from_shape_fn(dim, |(x, y, z)| {
@@ -33,10 +33,10 @@ pub fn generate(world: &mut World) {
                 VoxelColor::none()
             }
         })),
-    });
+    }, Synced));
 
     let dim = (1000, 2, 1000);
-    world.spawn(VoxelGridBundle {
+    world.spawn((VoxelGridBundle {
         pos: Vector3::new(0.0, -2.1, 0.0).into(),
         orientation: Rotation3::identity().into(),
         grid: VoxelGrid::new(Array3::from_shape_fn(dim, |(x, y, z)| {
@@ -53,10 +53,10 @@ pub fn generate(world: &mut World) {
                 VoxelColor::none()
             }
         })),
-    });
+    }, Synced));
 
     let dim = (3, 3, 3);
-    world.spawn(VoxelGridBundle {
+    world.spawn((VoxelGridBundle {
         pos: Vector3::new(0.0, 0.0, 16.5).into(),
         orientation: (Rotation3::from_axis_angle(&Vector3::y_axis(), std::f32::consts::PI / 4.0)
             * Rotation3::from_axis_angle(
@@ -70,5 +70,5 @@ pub fn generate(world: &mut World) {
             b: 255,
             a: 255,
         })),
-    });
+    }, Synced));
 }

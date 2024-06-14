@@ -1,48 +1,28 @@
-use std::sync::mpsc::{channel, Receiver, Sender, TryIter};
+pub mod thread;
 
-use bevy_ecs::{
-    component::{Component, TableStorage},
-    entity::Entity,
-};
+use crate::world::component::{Pos, VoxelGridBundle};
+use bevy_ecs::{entity::Entity, system::Resource};
+use std::sync::mpsc::Sender;
+use thread::{ThreadChannel, ThreadHandle};
 
-pub enum ServerMessage {}
+pub enum ServerMessage {
+    Stop,
+    LoadWorld,
+    SpawnVoxelGrid(VoxelGridBundle),
+}
 
 pub enum ClientMessage {
-    LoadWorld(Vec<(Entity, Vec<Box<dyn Component<Storage = TableStorage>>>)>),
+    SpawnVoxelGrid(Entity, VoxelGridBundle),
+    PosUpdate(Entity, Pos),
 }
 
-pub struct ServerHandle {
-    send: Sender<ServerMessage>,
-    recv: Receiver<ClientMessage>,
-}
+pub type ClientChannel = ThreadChannel<ClientMessage, ServerMessage>;
+pub type ServerHandle = ThreadHandle<ServerMessage, ClientMessage>;
 
-impl ServerHandle {
-    pub fn send(&self, msg: ServerMessage) {
-        self.send.send(msg).expect("BOOOOOO");
-    }
-    pub fn recv(&self) -> TryIter<ClientMessage> {
-        self.recv.try_iter()
-    }
-}
-
-pub struct ClientHandle {
-    send: Sender<ClientMessage>,
-    recv: Receiver<ServerMessage>,
-}
-
-impl ClientHandle {
+#[derive(Resource, Clone)]
+pub struct ClientSender(pub Sender<ClientMessage>);
+impl ClientSender {
     pub fn send(&self, msg: ClientMessage) {
-        self.send.send(msg).expect("YOU HAVE FAILED THE MISSION");
+        self.0.send(msg).expect("YOU HAVE FAILED THE MISSION");
     }
-    pub fn recv(&self) -> TryIter<ServerMessage> {
-        self.recv.try_iter()
-    }
-}
-
-pub fn client_server_channel() -> (ClientHandle, ServerHandle) {
-    let (cs, sr) = channel();
-    let (ss, cr) = channel();
-    let sh = ServerHandle { send: ss, recv: sr };
-    let ch = ClientHandle { send: cs, recv: cr };
-    (ch, sh)
 }

@@ -7,9 +7,12 @@ use ndarray::{Array3, ArrayBase, Dim, SliceArg};
 
 use crate::client::render::voxel::VoxelColor;
 
-#[derive(Debug, Component, Default, Deref, DerefMut)]
+#[derive(Debug, Clone, Copy, Component, Default)]
+pub struct Synced;
+
+#[derive(Debug, Clone, Copy, Component, Default, Deref, DerefMut)]
 pub struct Pos(pub Vector3<f32>);
-#[derive(Debug, Component, Default, Deref, DerefMut)]
+#[derive(Debug, Clone, Copy, Component, Default, Deref, DerefMut)]
 pub struct Orientation(pub Rotation3<f32>);
 
 pub type VoxelGrid = TrackedGrid<VoxelColor>;
@@ -62,7 +65,7 @@ impl From<Rotation3<f32>> for Orientation {
     }
 }
 
-#[derive(Bundle)]
+#[derive(Bundle, Clone)]
 pub struct VoxelGridBundle {
     pub pos: Pos,
     pub orientation: Orientation,

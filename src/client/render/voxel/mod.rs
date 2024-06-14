@@ -4,11 +4,15 @@ mod group;
 mod light;
 mod view;
 
+use std::collections::HashMap;
+
+use bevy_ecs::entity::Entity;
 pub use color::*;
 
 use light::GlobalLight;
 use nalgebra::{Projective3, Transform3, Translation3, Vector2, Vector3};
 
+use super::UpdateGridTransform;
 use crate::client::{
     camera::Camera,
     render::{
@@ -16,6 +20,7 @@ use crate::client::{
         CreateVoxelGrid,
     },
 };
+
 use {group::VoxelGroup, view::View};
 
 pub struct VoxelPipeline {
@@ -26,6 +31,7 @@ pub struct VoxelPipeline {
     voxel_groups: Storage<VoxelGroup>,
     voxels: Storage<VoxelColor>,
     global_lights: Storage<GlobalLight>,
+    id_map: HashMap<Entity, (usize, VoxelGroup)>,
 }
 
 impl VoxelPipeline {
@@ -123,6 +129,7 @@ impl VoxelPipeline {
             voxels,
             voxel_groups,
             global_lights,
+            id_map: HashMap::new(),
         }
     }
 
@@ -132,6 +139,7 @@ impl VoxelPipeline {
         encoder: &mut wgpu::CommandEncoder,
         belt: &mut wgpu::util::StagingBelt,
         CreateVoxelGrid {
+            id,
             pos,
             orientation,
             dimensions,
@@ -139,6 +147,7 @@ impl VoxelPipeline {
         }: CreateVoxelGrid,
     ) {
         let offset = self.voxels.len();
+
         let updates = [ArrBufUpdate {
             offset,
             data: &grid,
@@ -160,9 +169,12 @@ impl VoxelPipeline {
             offset: self.voxel_groups.len(),
             data: &[group],
         }];
-        let size = self.voxel_groups.len() + 1;
+        let i = self.voxel_groups.len();
+        let size = i + 1;
         self.voxel_groups
             .update(device, encoder, belt, size, &updates);
+
+        self.id_map.insert(id, (i, group));
 
         self.bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &self.bind_group_layout,
@@ -174,6 +186,30 @@ impl VoxelPipeline {
             ],
             label: Some("tile_bind_group"),
         });
+    }
+
+    pub fn update_transform(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        belt: &mut wgpu::util::StagingBelt,
+        update: UpdateGridTransform,
+    ) {
+        if let Some((i, group)) = self.id_map.get_mut(&update.id) {
+            let proj = Projective3::identity()
+                * Translation3::from(update.pos)
+                * update.orientation
+                * Translation3::from(-group.dimensions.cast() / 2.0);
+            group.transform = proj;
+            group.transform_inv = proj.inverse();
+            let updates = [ArrBufUpdate {
+                offset: *i,
+                data: &[*group],
+            }];
+            let size = self.voxel_groups.len();
+            self.voxel_groups
+                .update(device, encoder, belt, size, &updates);
+        }
     }
 
     pub fn update_view(

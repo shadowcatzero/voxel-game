@@ -2,12 +2,12 @@ use winit::{application::ApplicationHandler, event::WindowEvent, event_loop::Con
 
 use super::Client;
 
-pub struct ClientApp {
-    client: Option<Client>,
+pub struct ClientApp<'a> {
+    client: Option<Client<'a>>,
 }
 
-impl ClientApp {
-    fn client(&mut self) -> &mut Client {
+impl <'a> ClientApp<'a> {
+    fn client(&mut self) -> &mut Client<'a> {
         self.client.as_mut().expect("bruh")
     }
 
@@ -16,7 +16,7 @@ impl ClientApp {
     }
 }
 
-impl ApplicationHandler for ClientApp {
+impl ApplicationHandler for ClientApp<'_> {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         if self.client.is_none() {
             self.client = Some(Client::new(event_loop));

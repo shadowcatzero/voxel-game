@@ -1,14 +1,13 @@
-mod thread;
+mod command;
 mod util;
 pub mod voxel;
 
-pub use thread::*;
+pub use command::*;
 
 use super::camera::Camera;
-use crate::client::rsc::{CLEAR_COLOR, FRAME_TIME};
+use crate::client::rsc::CLEAR_COLOR;
 use nalgebra::Vector2;
 use smaa::{SmaaMode, SmaaTarget};
-use std::time::{Duration, Instant};
 use voxel::VoxelPipeline;
 use winit::dpi::PhysicalSize;
 
@@ -23,9 +22,6 @@ pub struct Renderer<'a> {
     voxel_pipeline: VoxelPipeline,
     smaa_target: SmaaTarget,
     camera: Camera,
-
-    frame_time: Duration,
-    target: Instant,
 }
 
 impl<'a> Renderer<'a> {
@@ -102,8 +98,6 @@ impl<'a> Renderer<'a> {
             config,
             queue,
             smaa_target,
-            frame_time: FRAME_TIME,
-            target: Instant::now(),
         }
     }
 

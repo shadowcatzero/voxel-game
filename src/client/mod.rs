@@ -9,26 +9,30 @@ mod state;
 mod system;
 
 pub use app::*;
-use bevy_ecs::{system::SystemId, world::World};
-use component::RenderResource;
-use render::{RenderMessage, RendererChannel};
+use bevy_ecs::{entity::Entity, system::SystemId, world::World};
+use component::RenderCommands;
+use render::RenderCommand;
+use rsc::FRAME_TIME;
 pub use state::*;
-use system::voxel_grid::update_renderer;
+use system::render::add_grid;
 
-use crate::{server::Server, sync::ServerHandle, world::generation::generate};
+use crate::{
+    server::Server,
+    sync::{ClientMessage, ServerHandle, ServerMessage},
+};
 
 use self::{input::Input, render::Renderer, ClientState};
-use std::{sync::Arc, thread::JoinHandle, time::Instant};
+use std::{collections::HashMap, sync::Arc, time::{Duration, Instant}};
 use winit::{
     event::WindowEvent,
     window::{Window, WindowAttributes},
 };
 
-pub struct Client {
+pub struct Client<'a> {
     window: Arc<Window>,
     state: ClientState,
-    render_handle: Option<JoinHandle<()>>,
-    renderer: RendererChannel,
+    renderer: Renderer<'a>,
+    render_commands: Vec<RenderCommand>,
     exit: bool,
     input: Input,
     prev_update: Instant,
@@ -36,10 +40,18 @@ pub struct Client {
     keep_cursor: bool,
     world: World,
     server: ServerHandle,
-    bruh: SystemId,
+    server_id_map: HashMap<Entity, Entity>,
+    systems: ClientSystems,
+    target: Instant,
+    frame_time: Duration,
 }
 
-impl Client {
+pub struct ClientSystems {
+    render_add_grid: SystemId,
+    render_update_transform: SystemId,
+}
+
+impl Client<'_> {
     pub fn new(event_loop: &winit::event_loop::ActiveEventLoop) -> Self {
         let mut world = World::new();
         let window = Arc::new(
@@ -48,27 +60,32 @@ impl Client {
                 .expect("Failed to create window"),
         );
 
-        let (render_channel, render_handle) = Renderer::spawn(window.clone());
-        world.insert_resource(RenderResource(render_channel.clone()));
-        let bruh = world.register_system(update_renderer);
+        let renderer = Renderer::spawn(window.clone());
+        world.insert_resource(RenderCommands(Vec::new()));
 
         let state = ClientState::new();
-        let server = Server::spawn();
-        generate(&mut world);
+        let server = ServerHandle::spawn(Server::start);
+        server.send(ServerMessage::LoadWorld);
 
         Self {
             window,
             exit: false,
-            render_handle: Some(render_handle),
-            renderer: render_channel,
+            renderer,
+            render_commands: Vec::new(),
             state,
             input: Input::new(),
             prev_update: Instant::now(),
             grabbed_cursor: false,
             keep_cursor: false,
+            systems: ClientSystems {
+                render_add_grid: world.register_system(add_grid),
+                render_update_transform: world.register_system(system::render::update_transform),
+            },
             world,
             server,
-            bruh,
+            server_id_map: HashMap::new(),
+            target: Instant::now(),
+            frame_time: FRAME_TIME,
         }
     }
 
@@ -81,31 +98,51 @@ impl Client {
         self.input.end();
 
         self.recv();
-        self.world.run_system(self.bruh).expect("WHAT");
+        self.world
+            .run_system(self.systems.render_add_grid)
+            .expect("WHAT v2");
+        self.world
+            .run_system(self.systems.render_update_transform)
+            .expect("WHAT");
         self.world.clear_trackers();
 
+        if now >= self.target {
+            self.target += self.frame_time;
+            let mut commands = std::mem::take(&mut self.render_commands);
+            let world_cmds = std::mem::take(&mut self.world.resource_mut::<RenderCommands>().0);
+            commands.extend(world_cmds);
+            self.renderer.handle_commands(commands);
+            self.renderer.draw();
+        }
+
         if self.exit {
-            self.renderer.send(RenderMessage::Exit);
-            // you know I'd like to do a timeout here...
-            // only because I have an NVIDIA GPU HELP
-            self.render_handle
-                .take()
-                .expect("uh oh")
-                .join()
-                .expect("bruh");
+            self.server.send(ServerMessage::Stop);
+            self.server.join();
             event_loop.exit();
         }
     }
 
     pub fn recv(&mut self) {
-        for msg in self.server.recv() {}
+        for msg in self.server.recv() {
+            match msg {
+                ClientMessage::SpawnVoxelGrid(entity, grid) => {
+                    let cid = self.world.spawn(grid).id();
+                    self.server_id_map.insert(entity, cid);
+                }
+                ClientMessage::PosUpdate(e, pos) => {
+                    if let Some(id) = self.server_id_map.get(&e) {
+                        self.world.entity_mut(*id).insert(pos);
+                    }
+                }
+            }
+        }
     }
 
     pub fn window_event(&mut self, event: WindowEvent) {
         match event {
             WindowEvent::CloseRequested => self.exit = true,
-            WindowEvent::Resized(size) => self.renderer.send(RenderMessage::Resize(size)),
-            WindowEvent::RedrawRequested => self.renderer.send(RenderMessage::Draw),
+            WindowEvent::Resized(size) => self.renderer.resize(size),
+            WindowEvent::RedrawRequested => self.renderer.draw(),
             WindowEvent::CursorLeft { .. } => {
                 self.input.clear();
             }

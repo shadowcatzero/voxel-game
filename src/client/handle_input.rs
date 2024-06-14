@@ -4,11 +4,14 @@ use nalgebra::Rotation3;
 use ndarray::Array3;
 use winit::{dpi::PhysicalPosition, keyboard::KeyCode as Key, window::CursorGrabMode};
 
-use crate::world::component::{VoxelGrid, VoxelGridBundle};
+use crate::{
+    sync::ServerMessage,
+    world::component::{VoxelGrid, VoxelGridBundle},
+};
 
 use super::{render::voxel::VoxelColor, Client};
 
-impl Client {
+impl Client<'_> {
     pub fn handle_input(&mut self, dt: &Duration) {
         let dt = dt.as_secs_f32();
         let Client {
@@ -101,19 +104,24 @@ impl Client {
             state.camera.pos += *state.camera.down() * move_dist;
         }
         if state.camera != old_camera {
-            self.renderer
-                .send(super::render::RenderMessage::ViewUpdate(state.camera));
+            self.render_commands
+                .push(super::render::RenderCommand::ViewUpdate(state.camera));
         }
 
         // fun
         if input.just_pressed(Key::KeyF) {
-            self.world.spawn(VoxelGridBundle {
-                pos: (state.camera.pos + 135.0 * 2.0 * *state.camera.forward()).into(),
-                orientation: state.camera.orientation.into(),
-                grid: VoxelGrid::new(Array3::from_shape_fn((135, 135, 135), |(..)| {
-                    VoxelColor::white()
-                })),
-            });
+            self.server
+                .send(ServerMessage::SpawnVoxelGrid(VoxelGridBundle {
+                    pos: (state.camera.pos + 135.0 * 2.0 * *state.camera.forward()).into(),
+                    orientation: state.camera.orientation.into(),
+                    grid: VoxelGrid::new(Array3::from_shape_fn((135, 135, 135), |(x, y, z)| {
+                        if x == 0 || y == 0 || z == 0 || x == 134 || y == 134 || z == 134 {
+                            VoxelColor::white()
+                        } else {
+                            VoxelColor::none()
+                        }
+                    })),
+                }));
         }
     }
 }

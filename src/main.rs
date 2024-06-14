@@ -4,7 +4,6 @@ use client::ClientApp;
 use winit::event_loop::EventLoop;
 
 mod client;
-mod util;
 mod world;
 mod server;
 mod sync;
