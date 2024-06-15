@@ -3,6 +3,7 @@ use crate::client::camera::Camera;
 use super::{voxel::VoxelColor, Renderer};
 use bevy_ecs::entity::Entity;
 use nalgebra::{Rotation3, Vector3};
+use ndarray::Array3;
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -19,7 +20,7 @@ pub struct CreateVoxelGrid {
     pub pos: Vector3<f32>,
     pub orientation: Rotation3<f32>,
     pub dimensions: Vector3<usize>,
-    pub grid: Vec<VoxelColor>,
+    pub grid: Array3<VoxelColor>,
 }
 
 #[derive(Debug, Clone)]

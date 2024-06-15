@@ -16,7 +16,7 @@ pollster = "0.3"
 rand = "0.8.5"
 simba = "0.8.1"
 smaa = "0.14.0"
-wgpu = "0.20"
+wgpu = "0.20.1"
 bevy_ecs = "0.13.2"
 bevy_derive = "0.13.2"
-winit = {version="0.30", features=["serde"]}
+winit = {version="0.30.1", features=["serde"]}

@@ -1,26 +1,47 @@
-use super::uniform::Uniform;
-use nalgebra::{Projective3, Translation3, Rotation3};
-
-mod view;
 mod color;
-mod vertex;
+mod group;
+mod instance;
 mod square;
+mod view;
+
+use core::panic;
+
+use group::FaceGroup;
+use instance::VoxelFace;
+use nalgebra::{Perspective3, Transform3, Translation3, Vector2, Vector3};
+use view::View;
+use wgpu::{SurfaceConfiguration, VertexAttribute, VertexFormat};
+
+use crate::client::camera::Camera;
+
+use super::{
+    util::{Instances, Texture, Uniform},
+    CreateVoxelGrid, UpdateGridTransform,
+};
 
 pub struct VoxelPipeline {
     pipeline: wgpu::RenderPipeline,
     view: Uniform<View>,
     bind_group_layout: wgpu::BindGroupLayout,
-    bind_group: wgpu::BindGroup,
-    voxel_groups: Storage<VoxelGroup>,
-    voxels: Storage<VoxelColor>,
-    arst: bool,
+    bind_groups: Vec<wgpu::BindGroup>,
+    vertices: Vec<Instances<VoxelFace>>,
 }
 
-const WIDTH: u32 = 300;
-const HEIGHT: u32 = 300;
+const INSTANCE_ATTRS: [wgpu::VertexAttribute; 2] = [
+    VertexAttribute {
+        format: VertexFormat::Uint32,
+        offset: 0,
+        shader_location: 0,
+    },
+    VertexAttribute {
+        format: VertexFormat::Uint32,
+        offset: 4,
+        shader_location: 1,
+    },
+];
 
 impl VoxelPipeline {
-    pub fn new(device: &wgpu::Device, format: &wgpu::TextureFormat) -> Self {
+    pub fn new(device: &wgpu::Device, config: &SurfaceConfiguration) -> Self {
         // shaders
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Tile Shader"),
@@ -28,27 +49,17 @@ impl VoxelPipeline {
         });
 
         let view = Uniform::<View>::init(device, "view", 0);
-        let voxels = Storage::init(device, "voxels", 1);
-        let voxel_groups = Storage::init(device, "voxel groups", 2);
+        let example_faces =
+            Instances::<VoxelFace>::init(device, "voxel groups", 0, &INSTANCE_ATTRS);
+        let example_group = Uniform::<FaceGroup>::init(device, "voxel group", 1);
 
         // bind groups
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 view.bind_group_layout_entry(),
-                voxels.bind_group_layout_entry(),
-                voxel_groups.bind_group_layout_entry(),
+                example_group.bind_group_layout_entry(),
             ],
             label: Some("tile_bind_group_layout"),
-        });
-
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &bind_group_layout,
-            entries: &[
-                view.bind_group_entry(),
-                voxels.bind_group_entry(),
-                voxel_groups.bind_group_entry(),
-            ],
-            label: Some("tile_bind_group"),
         });
 
         // pipeline
@@ -65,14 +76,14 @@ impl VoxelPipeline {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[],
+                buffers: &[example_faces.desc()],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: *format,
+                    format: config.format,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -82,12 +93,18 @@ impl VoxelPipeline {
                 topology: wgpu::PrimitiveTopology::TriangleStrip,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
+                cull_mode: Some(wgpu::Face::Back),
                 polygon_mode: wgpu::PolygonMode::Fill,
                 unclipped_depth: false,
                 conservative: false,
             },
-            depth_stencil: None,
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: Texture::DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,
@@ -99,165 +116,123 @@ impl VoxelPipeline {
         Self {
             pipeline: render_pipeline,
             view,
-            bind_group,
             bind_group_layout,
-            voxels,
-            voxel_groups,
-            arst: false,
+            bind_groups: Vec::new(),
+            vertices: Vec::new(),
         }
     }
 
-    pub fn update(
+    pub fn update_view(
         &mut self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         belt: &mut wgpu::util::StagingBelt,
-        update_data: &RenderUpdateData,
+        size: Vector2<u32>,
+        camera: &Camera,
     ) {
-        if !self.arst {
-            let lx = 15;
-            let ly = 10;
-            let lz = 10;
-            let mut data = vec![VoxelColor::none(); lx * ly * lz];
-            for x in 0..lx {
-                for y in 0..ly {
-                    data[x + y * lx] = VoxelColor {
-                        r: (x as f32 / lx as f32 * 255.0) as u8,
-                        g: (y as f32 / ly as f32 * 255.0) as u8,
-                        b: 0,
-                        a: 100,
-                    };
-                }
-            }
-            for x in 0..lx {
-                for y in 0..ly {
-                    data[x + y * lx + 3 * lx * ly] = VoxelColor {
-                        r: (x as f32 / lx as f32 * 255.0) as u8,
-                        g: (y as f32 / ly as f32 * 255.0) as u8,
-                        b: 100,
-                        a: 255,
-                    };
-                }
-            }
-            for i in 0..lx.min(ly.min(lz)) {
-                data[i + i * lx + i * lx * ly] = VoxelColor::white();
-            }
-
-            let lx2 = 1000;
-            let ly2 = 2;
-            let lz2 = 1000;
-            let offset2 = data.len();
-            let mut data2 = vec![VoxelColor::none(); lx2 * ly2 * lz2];
-            let paint = VoxelColor {
-                r: 255,
-                g: 0,
-                b: 255,
-                a: 255,
-            };
-            for x in 0..lx2 {
-                data2[x + (ly2 - 1) * lx2] = paint;
-                data2[x + (ly2 - 1) * lx2 + (lz2 - 1) * lx2 * ly2] = paint;
-            }
-            for z in 0..lz2 {
-                data2[(ly2 - 1) * lx2 + z * lx2 * ly2] = paint;
-                data2[lx2 - 1 + (ly2 - 1) * lx2 + z * lx2 * ly2] = paint;
-            }
-            for x in 0..lx2 {
-                for z in 0..lz2 {
-                    data2[x + z * lx2 * ly2] = rand::random();
-                }
-            }
-            data.append(&mut data2);
-            let lx3 = 3;
-            let ly3 = 3;
-            let lz3 = 3;
-            let offset3 = data.len();
-            data.append(&mut vec![
-                VoxelColor {
-                    r: 255,
-                    g: 0,
-                    b: 255,
-                    a: 255,
-                };
-                lx3 * ly3 * lz3
-            ]);
-            self.voxels.update(
-                device,
-                encoder,
-                belt,
-                data.len(),
-                &[ArrBufUpdate { offset: 0, data }],
-            );
-            let proj = Projective3::identity()
-                * Translation3::new(0.0, 0.0, 20.0)
-                * Rotation3::from_axis_angle(&Vector3::y_axis(), 0.5)
-                * Translation3::new(-(lx as f32 / 2.0), -(ly as f32 / 2.0), -(lz as f32 / 2.0));
-            let group = VoxelGroup {
-                transform: proj,
-                transform_inv: proj.inverse(),
-                dimensions: Vector3::new(lx as u32, ly as u32, lz as u32),
-                offset: 0,
-            };
-            let proj2 = Projective3::identity()
-                * Translation3::new(0.0, -2.1, 20.0)
-                * Translation3::new(
-                    -(lx2 as f32 / 2.0),
-                    -(ly2 as f32 / 2.0),
-                    -(lz2 as f32 / 2.0),
-                );
-            let group2 = VoxelGroup {
-                transform: proj2,
-                transform_inv: proj2.inverse(),
-                dimensions: Vector3::new(lx2 as u32, ly2 as u32, lz2 as u32),
-                offset: offset2 as u32,
-            };
-            let proj3 = Projective3::identity()
-                * Translation3::new(0.0, 0.0, 16.5)
-                * Rotation3::from_axis_angle(&Vector3::y_axis(), std::f32::consts::PI / 4.0)
-                * Rotation3::from_axis_angle(
-                    &UnitVector3::new_normalize(Vector3::new(1.0, 0.0, 1.0)),
-                    std::f32::consts::PI / 4.0,
-                )
-                * Translation3::new(
-                    -(lx3 as f32 / 2.0),
-                    -(ly3 as f32 / 2.0),
-                    -(lz3 as f32 / 2.0),
-                );
-            let group3 = VoxelGroup {
-                transform: proj3,
-                transform_inv: proj3.inverse(),
-                dimensions: Vector3::new(lx3 as u32, ly3 as u32, lz3 as u32),
-                offset: offset3 as u32,
-            };
-            let groups = vec![group, group2, group3];
-            self.voxel_groups.update(
-                device,
-                encoder,
-                belt,
-                groups.len(),
-                &[ArrBufUpdate {
-                    offset: 0,
-                    data: groups,
-                }],
-            );
-            self.bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                layout: &self.bind_group_layout,
-                entries: &[
-                    self.view.bind_group_entry(),
-                    self.voxels.bind_group_entry(),
-                    self.voxel_groups.bind_group_entry(),
-                ],
-                label: Some("tile_bind_group"),
-            });
-
-            self.arst = true;
-        }
-        self.view.update(device, encoder, belt, update_data);
+        let mut transform = (Translation3::from(camera.pos) * camera.orientation)
+            .inverse()
+            .to_matrix();
+        transform = transform.append_nonuniform_scaling(&Vector3::new(1.0, 1.0, -1.0));
+        let projection = Perspective3::new(
+            size.x as f32 / size.y as f32,
+            std::f32::consts::PI / 2.0,
+            0.1,
+            1000.0,
+        );
+        transform = projection.as_matrix() * transform;
+        let data = View {
+            width: size.x,
+            height: size.y,
+            zoom: camera.scale,
+            transform,
+        };
+        self.view.update(device, encoder, belt, data)
     }
 
     pub fn draw<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>) {
         render_pass.set_pipeline(&self.pipeline);
-        render_pass.set_bind_group(0, &self.bind_group, &[]);
-        render_pass.draw(0..4, 0..1);
+        for i in 0..self.bind_groups.len() {
+            render_pass.set_bind_group(0, &self.bind_groups[i], &[]);
+            let vertices = &self.vertices[i];
+            vertices.set_in(render_pass);
+            render_pass.draw(0..4, 0..vertices.len() as u32);
+        }
+    }
+
+    pub fn add_group(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        belt: &mut wgpu::util::StagingBelt,
+        CreateVoxelGrid {
+            id,
+            pos,
+            orientation,
+            dimensions,
+            grid,
+        }: CreateVoxelGrid,
+    ) {
+        let proj = Transform3::identity()
+            * Translation3::from(pos)
+            * orientation
+            * Translation3::from(-dimensions.cast() / 2.0);
+        for face in 0..6 {
+            let group = FaceGroup {
+                dimensions: dimensions.cast(),
+                transform: proj,
+                face,
+            };
+            let uniform = Uniform::init_with(device, "voxel group", 1, &[group]);
+            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &self.bind_group_layout,
+                entries: &[self.view.bind_group_entry(), uniform.bind_group_entry()],
+                label: Some("voxel bind group"),
+            });
+            self.bind_groups.push(bind_group);
+
+            let mut data = Vec::new();
+            let n_offset = match face % 3 {
+                0 => 1,
+                1 => dimensions.z * dimensions.y,
+                2 => dimensions.z,
+                _ => 0,
+            } as i32
+                * ((face as i32 / 3) * 2 - 1);
+            let face_dir = (face as i32 / 3) * 2 - 1;
+            for (i, ((x, y, z), color)) in grid.indexed_iter().enumerate() {
+                let neighbor = match face {
+                    0 => if z > 0 {Some((x, y, z - 1))} else {None},
+                    2 => if y > 0 {Some((x, y - 1, z))} else {None},
+                    1 => if x > 0 {Some((x - 1, y, z))} else {None},
+                    3 => if z < dimensions.z - 1 {Some((x, y, z + 1))} else {None},
+                    5 => if y < dimensions.y - 1 {Some((x, y + 1, z))} else {None},
+                    4 => if x < dimensions.x - 1 {Some((x + 1, y, z))} else {None},
+                    _ => panic!("what"),
+                }.map(|p| grid.get(p).unwrap());
+                if color.a > 0 && !neighbor.is_some_and(|c| c.a == color.a) {
+                    data.push(VoxelFace {
+                        index: i as u32,
+                        color: *color,
+                    });
+                }
+            }
+            self.vertices.push(Instances::init_with(
+                device,
+                "vvvvv",
+                0,
+                &INSTANCE_ATTRS,
+                &data,
+            ));
+        }
+    }
+
+    pub fn update_transform(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        staging_belt: &mut wgpu::util::StagingBelt,
+        update: UpdateGridTransform,
+    ) {
     }
 }

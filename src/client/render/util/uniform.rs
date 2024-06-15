@@ -23,6 +23,17 @@ impl<T: Default + bytemuck::Pod> Uniform<T> {
 }
 
 impl<T: PartialEq + bytemuck::Pod> Uniform<T> {
+    pub fn init_with(device: &wgpu::Device, name: &str, binding: u32, data: &[T]) -> Self {
+        Self {
+            buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(&(name.to_owned() + " Uniform Buf")),
+                contents: bytemuck::cast_slice(data),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            }),
+            binding,
+            ty: PhantomData,
+        }
+    }
     pub fn bind_group_layout_entry(&self) -> wgpu::BindGroupLayoutEntry {
         wgpu::BindGroupLayoutEntry {
             binding: self.binding,

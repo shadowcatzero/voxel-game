@@ -2,13 +2,13 @@ use wgpu::{BufferUsages, VertexAttribute};
 
 use super::buf::{ArrBuf, ArrBufUpdate, BufMove};
 
-pub struct Instances<T: bytemuck::Pod> {
+pub struct Vertices<T: bytemuck::Pod> {
     buf: ArrBuf<T>,
     location: u32,
-    attrs: Vec<VertexAttribute>,
+    attrs: [VertexAttribute; 1],
 }
 
-impl<T: bytemuck::Pod> Instances<T> {
+impl<T: bytemuck::Pod> Vertices<T> {
     pub fn update(
         &mut self,
         device: &wgpu::Device,
@@ -24,7 +24,7 @@ impl<T: bytemuck::Pod> Instances<T> {
         device: &wgpu::Device,
         label: &str,
         location: u32,
-        attrs: &[wgpu::VertexAttribute],
+        format: wgpu::VertexFormat,
     ) -> Self {
         Self {
             buf: ArrBuf::init(
@@ -33,7 +33,11 @@ impl<T: bytemuck::Pod> Instances<T> {
                 BufferUsages::VERTEX,
             ),
             location,
-            attrs: attrs.to_vec(),
+            attrs: [wgpu::VertexAttribute {
+                format,
+                offset: 0,
+                shader_location: location,
+            }],
         }
     }
 
@@ -41,7 +45,7 @@ impl<T: bytemuck::Pod> Instances<T> {
         device: &wgpu::Device,
         label: &str,
         location: u32,
-        attrs: &[wgpu::VertexAttribute],
+        format: wgpu::VertexFormat,
         data: &[T],
     ) -> Self {
         Self {
@@ -52,7 +56,11 @@ impl<T: bytemuck::Pod> Instances<T> {
                 data,
             ),
             location,
-            attrs: attrs.to_vec(),
+            attrs: [wgpu::VertexAttribute {
+                format,
+                offset: 0,
+                shader_location: location,
+            }],
         }
     }
 
@@ -63,7 +71,7 @@ impl<T: bytemuck::Pod> Instances<T> {
     pub fn desc(&self) -> wgpu::VertexBufferLayout {
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<T>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Instance,
+            step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &self.attrs,
         }
     }

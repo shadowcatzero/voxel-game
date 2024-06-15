@@ -1,14 +1,16 @@
 mod command;
 mod util;
 pub mod voxel;
+pub mod voxel_poly;
 
 pub use command::*;
+use util::Texture;
 
 use super::camera::Camera;
 use crate::client::rsc::CLEAR_COLOR;
 use nalgebra::Vector2;
 use smaa::{SmaaMode, SmaaTarget};
-use voxel::VoxelPipeline;
+use voxel_poly::VoxelPipeline;
 use winit::dpi::PhysicalSize;
 
 pub struct Renderer<'a> {
@@ -22,6 +24,7 @@ pub struct Renderer<'a> {
     voxel_pipeline: VoxelPipeline,
     smaa_target: SmaaTarget,
     camera: Camera,
+    depth_texture: Texture,
 }
 
 impl<'a> Renderer<'a> {
@@ -67,7 +70,7 @@ impl<'a> Renderer<'a> {
             format: surface_format,
             width: size.width,
             height: size.height,
-            present_mode: surface_caps.present_modes[0],
+            present_mode: wgpu::PresentMode::AutoVsync,
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
@@ -87,10 +90,12 @@ impl<'a> Renderer<'a> {
             SmaaMode::Smaa1X,
         );
 
+        let depth_texture = Texture::create_depth_texture(&device, &config, "depth_texture");
+
         Self {
             camera: Camera::default(),
             size: Vector2::new(size.width, size.height),
-            voxel_pipeline: VoxelPipeline::new(&device, &config.format),
+            voxel_pipeline: VoxelPipeline::new(&device, &config),
             staging_belt,
             surface,
             encoder: Self::create_encoder(&device),
@@ -98,6 +103,7 @@ impl<'a> Renderer<'a> {
             config,
             queue,
             smaa_target,
+            depth_texture,
         }
     }
 
@@ -127,7 +133,14 @@ impl<'a> Renderer<'a> {
                         store: wgpu::StoreOp::Store,
                     },
                 })],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture.view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
@@ -149,6 +162,8 @@ impl<'a> Renderer<'a> {
         self.smaa_target
             .resize(&self.device, size.width, size.height);
 
+        self.depth_texture =
+            Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
         self.voxel_pipeline.update_view(
             &self.device,
             &mut self.encoder,

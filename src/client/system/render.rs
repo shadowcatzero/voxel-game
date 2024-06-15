@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use bevy_ecs::{
     entity::Entity,
     query::{Added, Changed, Or},
@@ -31,7 +33,7 @@ pub fn add_grid(
                 grid.len_of(Axis(1)),
                 grid.len_of(Axis(2)),
             ),
-            grid: grid.iter().cloned().collect(),
+            grid: grid.deref().clone(),
         }));
     }
 }

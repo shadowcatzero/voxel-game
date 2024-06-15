@@ -1,12 +1,12 @@
 use super::buf::{ArrBuf, ArrBufUpdate, BufMove};
 use wgpu::BufferUsages;
 
-pub struct Storage<T: bytemuck::Pod + PartialEq> {
+pub struct Storage<T: bytemuck::Pod> {
     binding: u32,
     buf: ArrBuf<T>,
 }
 
-impl<T: PartialEq + bytemuck::Pod> Storage<T> {
+impl<T: bytemuck::Pod> Storage<T> {
     pub fn init(device: &wgpu::Device, label: &str, binding: u32) -> Self {
         Self {
             buf: ArrBuf::init(
@@ -30,7 +30,7 @@ impl<T: PartialEq + bytemuck::Pod> Storage<T> {
     }
 }
 
-impl<T: PartialEq + bytemuck::Pod> Storage<T> {
+impl<T: bytemuck::Pod> Storage<T> {
     pub fn bind_group_layout_entry(&self) -> wgpu::BindGroupLayoutEntry {
         wgpu::BindGroupLayoutEntry {
             binding: self.binding,

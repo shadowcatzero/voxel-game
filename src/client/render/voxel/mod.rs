@@ -150,7 +150,7 @@ impl VoxelPipeline {
 
         let updates = [ArrBufUpdate {
             offset,
-            data: &grid,
+            data: &grid.as_slice().unwrap(),
         }];
         let size = offset + grid.len();
         self.voxels.update(device, encoder, belt, size, &updates);
@@ -226,7 +226,6 @@ impl VoxelPipeline {
             width: size.x,
             height: size.y,
             zoom: camera.scale,
-            padding: 0,
             transform,
         };
         self.view.update(device, encoder, belt, data)

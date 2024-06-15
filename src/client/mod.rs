@@ -22,7 +22,11 @@ use crate::{
 };
 
 use self::{input::Input, render::Renderer, ClientState};
-use std::{collections::HashMap, sync::Arc, time::{Duration, Instant}};
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use winit::{
     event::WindowEvent,
     window::{Window, WindowAttributes},
@@ -44,6 +48,7 @@ pub struct Client<'a> {
     systems: ClientSystems,
     target: Instant,
     frame_time: Duration,
+    the_thing: bool,
 }
 
 pub struct ClientSystems {
@@ -86,6 +91,7 @@ impl Client<'_> {
             server_id_map: HashMap::new(),
             target: Instant::now(),
             frame_time: FRAME_TIME,
+            the_thing: false,
         }
     }
 
@@ -105,6 +111,13 @@ impl Client<'_> {
             .run_system(self.systems.render_update_transform)
             .expect("WHAT");
         self.world.clear_trackers();
+
+        if self.state.camera.pos.y < -10.0 {
+            self.the_thing = !self.the_thing;
+            if self.the_thing == true {
+                let thing = include_bytes!("../../../../videos/meme/rab_falls_and_dies.mp4");
+            }
+        }
 
         if now >= self.target {
             self.target += self.frame_time;

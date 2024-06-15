@@ -6,15 +6,13 @@ struct GlobalLight {
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
-    @location(0) tex_coords: vec2<f32>,
 };
 
 struct View {
+    transform: mat4x4<f32>,
     width: u32,
     height: u32,
     zoom: f32,
-    padding: u32,
-    transform: mat4x4<f32>,
 };
 
 struct VoxelGroup {
