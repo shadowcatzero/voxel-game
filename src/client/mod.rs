@@ -120,7 +120,7 @@ impl Client<'_> {
         if self.state.camera.pos.y < -10.0 {
             self.the_thing = !self.the_thing;
             if self.the_thing == true {
-                let thing = include_bytes!("../../../../videos/meme/rab_falls_and_dies.mp4");
+                // let thing = include_bytes!("../../../../videos/meme/rab_falls_and_dies.mp4");
             }
         }
 
