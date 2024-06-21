@@ -4,9 +4,9 @@ use client::ClientApp;
 use winit::event_loop::EventLoop;
 
 mod client;
-mod world;
+mod common;
 mod server;
-mod sync;
+mod util;
 
 fn main() {
     let event_loop = EventLoop::new().expect("Failed to create event loop");

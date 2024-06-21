@@ -1,21 +1,26 @@
 mod color;
+mod face;
 mod group;
-mod instance;
-mod square;
+mod light;
 mod view;
 
-use core::panic;
+use block_mesh::{ndshape::RuntimeShape, UnitQuadBuffer, RIGHT_HANDED_Y_UP_CONFIG};
+pub use color::*;
+pub use face::*;
 
 use group::FaceGroup;
-use instance::VoxelFace;
+use light::GlobalLight;
 use nalgebra::{Perspective3, Transform3, Translation3, Vector2, Vector3};
 use view::View;
 use wgpu::{SurfaceConfiguration, VertexAttribute, VertexFormat};
 
-use crate::client::camera::Camera;
+use crate::{
+    client::{camera::Camera, render::AddChunk},
+    common::component::{chunk, ChunkData},
+};
 
-use super::{
-    util::{Instances, Texture, Uniform},
+use super::super::{
+    util::{Instances, Storage, Texture, Uniform},
     CreateVoxelGrid, UpdateGridTransform,
 };
 
@@ -25,6 +30,7 @@ pub struct VoxelPipeline {
     bind_group_layout: wgpu::BindGroupLayout,
     bind_groups: Vec<wgpu::BindGroup>,
     vertices: Vec<Instances<VoxelFace>>,
+    global_lights: Storage<GlobalLight>,
 }
 
 const INSTANCE_ATTRS: [wgpu::VertexAttribute; 2] = [
@@ -52,12 +58,21 @@ impl VoxelPipeline {
         let example_faces =
             Instances::<VoxelFace>::init(device, "voxel groups", 0, &INSTANCE_ATTRS);
         let example_group = Uniform::<FaceGroup>::init(device, "voxel group", 1);
+        let global_lights = Storage::init_with(
+            device,
+            "global lights",
+            3,
+            &[GlobalLight {
+                direction: Vector3::new(-0.5, -4.0, 2.0).normalize(),
+            }],
+        );
 
         // bind groups
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 view.bind_group_layout_entry(),
                 example_group.bind_group_layout_entry(),
+                global_lights.bind_group_layout_entry(),
             ],
             label: Some("tile_bind_group_layout"),
         });
@@ -84,7 +99,7 @@ impl VoxelPipeline {
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
@@ -119,6 +134,7 @@ impl VoxelPipeline {
             bind_group_layout,
             bind_groups: Vec::new(),
             vertices: Vec::new(),
+            global_lights,
         }
     }
 
@@ -138,7 +154,7 @@ impl VoxelPipeline {
             size.x as f32 / size.y as f32,
             std::f32::consts::PI / 2.0,
             0.1,
-            1000.0,
+            10000.0,
         );
         transform = projection.as_matrix() * transform;
         let data = View {
@@ -177,46 +193,31 @@ impl VoxelPipeline {
             * Translation3::from(pos)
             * orientation
             * Translation3::from(-dimensions.cast() / 2.0);
-        for face in 0..6 {
-            let group = FaceGroup {
-                dimensions: dimensions.cast(),
-                transform: proj,
-                face,
-            };
-            let uniform = Uniform::init_with(device, "voxel group", 1, &[group]);
-            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                layout: &self.bind_group_layout,
-                entries: &[self.view.bind_group_entry(), uniform.bind_group_entry()],
-                label: Some("voxel bind group"),
-            });
-            self.bind_groups.push(bind_group);
 
-            let mut data = Vec::new();
-            let n_offset = match face % 3 {
-                0 => 1,
-                1 => dimensions.z * dimensions.y,
-                2 => dimensions.z,
-                _ => 0,
-            } as i32
-                * ((face as i32 / 3) * 2 - 1);
-            let face_dir = (face as i32 / 3) * 2 - 1;
-            for (i, ((x, y, z), color)) in grid.indexed_iter().enumerate() {
-                let neighbor = match face {
-                    0 => if z > 0 {Some((x, y, z - 1))} else {None},
-                    2 => if y > 0 {Some((x, y - 1, z))} else {None},
-                    1 => if x > 0 {Some((x - 1, y, z))} else {None},
-                    3 => if z < dimensions.z - 1 {Some((x, y, z + 1))} else {None},
-                    5 => if y < dimensions.y - 1 {Some((x, y + 1, z))} else {None},
-                    4 => if x < dimensions.x - 1 {Some((x + 1, y, z))} else {None},
-                    _ => panic!("what"),
-                }.map(|p| grid.get(p).unwrap());
-                if color.a > 0 && !neighbor.is_some_and(|c| c.a == color.a) {
-                    data.push(VoxelFace {
-                        index: i as u32,
-                        color: *color,
-                    });
-                }
-            }
+        let mut buffer = UnitQuadBuffer::new();
+        let dim: Vector3<u32> = dimensions.cast();
+        let dim = Vector3::new(dim.z, dim.y, dim.x);
+        let shape = RuntimeShape::<u32, 3>::new(dim.into());
+        let slice = grid.as_slice().unwrap();
+        block_mesh::visible_block_faces(
+            slice,
+            &shape,
+            [0; 3],
+            (dim - Vector3::new(1, 1, 1)).into(),
+            &RIGHT_HANDED_Y_UP_CONFIG.faces,
+            &mut buffer,
+        );
+        for (face, group) in buffer.groups.iter().enumerate() {
+            let data: Vec<VoxelFace> = group
+                .iter()
+                .map(|a| {
+                    let i = a.minimum[0] + a.minimum[1] * dim.y + a.minimum[2] * dim.y * dim.x;
+                    VoxelFace {
+                        index: i,
+                        color: slice[i as usize],
+                    }
+                })
+                .collect();
             self.vertices.push(Instances::init_with(
                 device,
                 "vvvvv",
@@ -224,6 +225,64 @@ impl VoxelPipeline {
                 &INSTANCE_ATTRS,
                 &data,
             ));
+            let group = FaceGroup {
+                dimensions: dimensions.cast(),
+                transform: proj,
+                face: ((8 - face) % 6) as u32,
+            };
+            let uniform = Uniform::init_with(device, "voxel group", 1, &[group]);
+            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &self.bind_group_layout,
+                entries: &[
+                    self.view.bind_group_entry(),
+                    uniform.bind_group_entry(),
+                    self.global_lights.bind_group_entry(),
+                ],
+                label: Some("voxel bind group"),
+            });
+            self.bind_groups.push(bind_group);
+        }
+    }
+
+    pub fn add_chunk(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        belt: &mut wgpu::util::StagingBelt,
+        AddChunk { id, pos, mesh }: AddChunk,
+    ) {
+        if mesh.faces.iter().all(|f| f.is_empty()) {
+            return;
+        }
+
+        let proj = Transform3::identity()
+            * Translation3::from(pos.cast() * crate::common::component::chunk::SIDE_LENGTH as f32)
+            * Translation3::from(-chunk::DIMENSIONS.cast() / 2.0);
+
+        for (face, meshes) in mesh.faces.iter().enumerate() {
+            self.vertices.push(Instances::init_with(
+                device,
+                "vvvvv",
+                0,
+                &INSTANCE_ATTRS,
+                meshes,
+            ));
+            let group = FaceGroup {
+                dimensions: chunk::DIMENSIONS.cast(),
+                transform: proj,
+                face: face as u32,
+            };
+            let uniform = Uniform::init_with(device, "voxel group", 1, &[group]);
+            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &self.bind_group_layout,
+                entries: &[
+                    self.view.bind_group_entry(),
+                    uniform.bind_group_entry(),
+                    self.global_lights.bind_group_entry(),
+                ],
+                label: Some("voxel bind group"),
+            });
+            self.bind_groups.push(bind_group);
         }
     }
 

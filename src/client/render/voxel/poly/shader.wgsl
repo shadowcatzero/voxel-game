@@ -8,6 +8,7 @@ struct InstanceInput {
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) color: vec4<f32>,
+    @location(1) normal: vec3<f32>,
 };
 
 struct VoxelFace {
@@ -28,16 +29,16 @@ struct VoxelGroup {
     face: u32,
 };
 
+struct GlobalLight {
+    dir: vec3<f32>,
+};
+
 @group(0) @binding(0)
 var<uniform> view: View;
 @group(0) @binding(1)
 var<uniform> group: VoxelGroup;
-
-const DIRECTIONS = array(
-    vec3<f32>(1.0, 1.0, 0.0),
-    vec3<f32>(0.0, 1.0, 1.0),
-    vec3<f32>(1.0, 0.0, 1.0),
-);
+@group(0) @binding(3)
+var<storage, read> global_lights: array<GlobalLight>;
 
 @vertex
 fn vs_main(
@@ -48,14 +49,23 @@ fn vs_main(
 
     let invert = select(0.0, 1.0, group.face / 3 == 1);
     let invert_mult = 1.0 - invert * 2.0;
+    let face_axis = group.face % 3;
     var square_pos = vec2<f32>(
         f32(vi % 2u),
         invert + invert_mult * f32(vi / 2u),
     );
     var cube_pos = vec3<f32>(invert);
     square_pos *= invert_mult;
-    cube_pos[(group.face) % 3] += square_pos.x;
-    cube_pos[(group.face + 1) % 3] += square_pos.y;
+    cube_pos[(group.face + 1) % 3] += square_pos.x;
+    cube_pos[(group.face + 2) % 3] += square_pos.y;
+
+    let cube_normal = invert_mult * vec3<f32>(
+        f32(face_axis == 0),
+        f32(face_axis % 2),
+        f32(face_axis / 2),
+    );
+    out.normal = (group.transform * vec4<f32>(cube_normal, 0.0)).xyz;
+
     var pos = vec4<f32>(
         cube_pos,
         1.0,
@@ -78,5 +88,9 @@ fn vs_main(
 fn fs_main(
     in: VertexOutput,
 ) -> @location(0) vec4<f32> {
-    return in.color;
+    let diffuse = max(dot(global_lights[0].dir, in.normal) + 0.1, 0.0);
+    let ambient = 0.2;
+    let lighting = max(diffuse, ambient);
+    let new_rgb = min(in.color.xyz * lighting, vec3<f32>(1.0));
+    return vec4<f32>(new_rgb, in.color.a);
 }

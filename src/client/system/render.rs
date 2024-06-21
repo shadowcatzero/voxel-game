@@ -5,15 +5,15 @@ use bevy_ecs::{
     query::{Added, Changed, Or},
     system::{Query, ResMut},
 };
-use nalgebra::Vector3;
-use ndarray::Axis;
+use nalgebra::{AbstractRotation, Rotation3, Vector3};
+use ndarray::{Array3, Axis};
 
 use crate::{
     client::{
         component::RenderCommands,
-        render::{CreateVoxelGrid, RenderCommand, UpdateGridTransform},
+        render::{voxel::VoxelColor, AddChunk, CreateVoxelGrid, RenderCommand, UpdateGridTransform},
     },
-    world::component::{Orientation, Pos, VoxelGrid},
+    common::component::{ChunkData, ChunkMesh, ChunkPos, Orientation, Pos, VoxelGrid},
 };
 
 pub fn add_grid(
@@ -24,16 +24,21 @@ pub fn add_grid(
     mut renderer: ResMut<RenderCommands>,
 ) {
     for (id, pos, orientation, grid) in query.iter() {
+        let dims = Vector3::new(
+            grid.len_of(Axis(0)) + 2,
+            grid.len_of(Axis(1)) + 2,
+            grid.len_of(Axis(2)) + 2,
+        );
+        let mut padded = Array3::from_elem((dims.x, dims.y, dims.z), VoxelColor::none());
+        padded
+            .slice_mut(ndarray::s![1..dims.x - 1, 1..dims.y - 1, 1..dims.z - 1])
+            .assign(grid);
         renderer.push(RenderCommand::CreateVoxelGrid(CreateVoxelGrid {
             id,
             pos: **pos,
             orientation: **orientation,
-            dimensions: Vector3::new(
-                grid.len_of(Axis(0)),
-                grid.len_of(Axis(1)),
-                grid.len_of(Axis(2)),
-            ),
-            grid: grid.deref().clone(),
+            dimensions: dims,
+            grid: padded,
         }));
     }
 }
@@ -47,6 +52,19 @@ pub fn update_transform(
             id,
             pos: **pos,
             orientation: **orientation,
+        }));
+    }
+}
+
+pub fn add_chunk(
+    query: Query<(Entity, &ChunkPos, &ChunkMesh), Or<(Added<ChunkPos>, Added<ChunkMesh>)>>,
+    mut renderer: ResMut<RenderCommands>,
+) {
+    for (id, pos, mesh) in query.iter() {
+        renderer.push(RenderCommand::AddChunk(AddChunk {
+            id,
+            pos: *pos,
+            mesh: mesh.clone()
         }));
     }
 }

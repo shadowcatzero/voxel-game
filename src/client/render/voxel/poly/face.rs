@@ -1,6 +1,6 @@
 use bytemuck::Zeroable;
 
-use crate::client::render::voxel::VoxelColor;
+use super::VoxelColor;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Zeroable)]

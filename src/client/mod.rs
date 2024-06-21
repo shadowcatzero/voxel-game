@@ -18,7 +18,7 @@ use system::render::add_grid;
 
 use crate::{
     server::Server,
-    sync::{ClientMessage, ServerHandle, ServerMessage},
+    common::{ClientMessage, ServerHandle, ServerMessage},
 };
 
 use self::{input::Input, render::Renderer, ClientState};
@@ -54,6 +54,7 @@ pub struct Client<'a> {
 pub struct ClientSystems {
     render_add_grid: SystemId,
     render_update_transform: SystemId,
+    render_add_chunk: SystemId,
 }
 
 impl Client<'_> {
@@ -70,7 +71,7 @@ impl Client<'_> {
 
         let state = ClientState::new();
         let server = ServerHandle::spawn(Server::start);
-        server.send(ServerMessage::LoadWorld);
+        server.send(ServerMessage::Join);
 
         Self {
             window,
@@ -85,6 +86,7 @@ impl Client<'_> {
             systems: ClientSystems {
                 render_add_grid: world.register_system(add_grid),
                 render_update_transform: world.register_system(system::render::update_transform),
+                render_add_chunk: world.register_system(system::render::add_chunk),
             },
             world,
             server,
@@ -110,6 +112,9 @@ impl Client<'_> {
         self.world
             .run_system(self.systems.render_update_transform)
             .expect("WHAT");
+        self.world
+            .run_system(self.systems.render_add_chunk)
+            .expect("WHAT v3");
         self.world.clear_trackers();
 
         if self.state.camera.pos.y < -10.0 {
@@ -129,8 +134,6 @@ impl Client<'_> {
         }
 
         if self.exit {
-            self.server.send(ServerMessage::Stop);
-            self.server.join();
             event_loop.exit();
         }
     }
@@ -139,8 +142,12 @@ impl Client<'_> {
         for msg in self.server.recv() {
             match msg {
                 ClientMessage::SpawnVoxelGrid(entity, grid) => {
-                    let cid = self.world.spawn(grid).id();
-                    self.server_id_map.insert(entity, cid);
+                    let id = self.world.spawn(grid).id();
+                    self.server_id_map.insert(entity, id);
+                }
+                ClientMessage::LoadChunk(entity, chunk) => {
+                    let id = self.world.spawn(chunk).id();
+                    self.server_id_map.insert(entity, id);
                 }
                 ClientMessage::PosUpdate(e, pos) => {
                     if let Some(id) = self.server_id_map.get(&e) {

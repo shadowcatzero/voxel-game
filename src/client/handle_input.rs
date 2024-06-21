@@ -5,8 +5,8 @@ use ndarray::Array3;
 use winit::{dpi::PhysicalPosition, keyboard::KeyCode as Key, window::CursorGrabMode};
 
 use crate::{
-    sync::ServerMessage,
-    world::component::{VoxelGrid, VoxelGridBundle},
+    common::ServerMessage,
+    common::component::{VoxelGrid, VoxelGridBundle},
 };
 
 use super::{render::voxel::VoxelColor, Client};
@@ -84,7 +84,7 @@ impl Client<'_> {
         }
 
         // camera position
-        let move_dist = 10.0 * dt;
+        let move_dist = 2.0 * 16.0 * dt;
         if input.pressed(Key::KeyW) {
             state.camera.pos += *state.camera.forward() * move_dist;
         }

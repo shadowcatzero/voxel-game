@@ -1,4 +1,7 @@
-use crate::client::camera::Camera;
+use crate::{
+    client::camera::Camera,
+    common::component::{ChunkMesh, ChunkPos},
+};
 
 use super::{voxel::VoxelColor, Renderer};
 use bevy_ecs::entity::Entity;
@@ -10,6 +13,7 @@ use winit::window::Window;
 #[derive(Debug, Clone)]
 pub enum RenderCommand {
     CreateVoxelGrid(CreateVoxelGrid),
+    AddChunk(AddChunk),
     UpdateGridTransform(UpdateGridTransform),
     ViewUpdate(Camera),
 }
@@ -21,6 +25,13 @@ pub struct CreateVoxelGrid {
     pub orientation: Rotation3<f32>,
     pub dimensions: Vector3<usize>,
     pub grid: Array3<VoxelColor>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AddChunk {
+    pub id: Entity,
+    pub pos: ChunkPos,
+    pub mesh: ChunkMesh,
 }
 
 #[derive(Debug, Clone)]
@@ -49,26 +60,28 @@ impl<'a> Renderer<'a> {
         let mut new_camera = false;
         for cmd in commands {
             match cmd {
-                RenderCommand::CreateVoxelGrid(desc) => {
-                    self.voxel_pipeline.add_group(
-                        &self.device,
-                        &mut self.encoder,
-                        &mut self.staging_belt,
-                        desc,
-                    );
-                }
+                RenderCommand::CreateVoxelGrid(desc) => self.voxel_pipeline.add_group(
+                    &self.device,
+                    &mut self.encoder,
+                    &mut self.staging_belt,
+                    desc,
+                ),
                 RenderCommand::ViewUpdate(camera) => {
                     new_camera = true;
                     self.camera = camera;
                 }
-                RenderCommand::UpdateGridTransform(update) => {
-                    self.voxel_pipeline.update_transform(
-                        &self.device,
-                        &mut self.encoder,
-                        &mut self.staging_belt,
-                        update,
-                    );
-                }
+                RenderCommand::UpdateGridTransform(update) => self.voxel_pipeline.update_transform(
+                    &self.device,
+                    &mut self.encoder,
+                    &mut self.staging_belt,
+                    update,
+                ),
+                RenderCommand::AddChunk(desc) => self.voxel_pipeline.add_chunk(
+                    &self.device,
+                    &mut self.encoder,
+                    &mut self.staging_belt,
+                    desc,
+                ),
             }
         }
         if new_camera {

@@ -1,16 +1,14 @@
 mod command;
 mod util;
 pub mod voxel;
-pub mod voxel_poly;
-
 pub use command::*;
-use util::Texture;
 
 use super::camera::Camera;
 use crate::client::rsc::CLEAR_COLOR;
 use nalgebra::Vector2;
 use smaa::{SmaaMode, SmaaTarget};
-use voxel_poly::VoxelPipeline;
+use util::Texture;
+use voxel::VoxelPipeline;
 use winit::dpi::PhysicalSize;
 
 pub struct Renderer<'a> {

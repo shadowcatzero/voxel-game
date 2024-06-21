@@ -3,12 +3,16 @@ use std::{
     thread::JoinHandle,
 };
 
-pub struct ThreadHandle<SendMsg, RecvMsg> {
-    pub channel: ThreadChannel<SendMsg, RecvMsg>,
-    pub handle: Option<JoinHandle<()>>,
+pub trait ExitType {
+    fn exit() -> Self;
 }
 
-impl<SendMsg: Send + 'static, RecvMsg: Send + 'static> ThreadHandle<SendMsg, RecvMsg> {
+pub struct ThreadHandle<SendMsg: Send + 'static + ExitType, RecvMsg: Send + 'static> {
+    channel: ThreadChannel<SendMsg, RecvMsg>,
+    handle: Option<JoinHandle<()>>,
+}
+
+impl<SendMsg: Send + 'static + ExitType, RecvMsg: Send + 'static> ThreadHandle<SendMsg, RecvMsg> {
     pub fn send(&self, msg: SendMsg) {
         self.channel.send(msg);
     }
@@ -34,6 +38,13 @@ impl<SendMsg: Send + 'static, RecvMsg: Send + 'static> ThreadHandle<SendMsg, Rec
     }
 }
 
+impl<SendMsg: ExitType + Send, RecvMsg: Send + 'static> Drop for ThreadHandle<SendMsg, RecvMsg> {
+    fn drop(&mut self) {
+        let _ = self.channel.send.send(SendMsg::exit());
+        self.join();
+    }
+}
+
 pub struct ThreadChannel<SendMsg, RecvMsg> {
     send: Sender<SendMsg>,
     recv: Receiver<RecvMsg>,
@@ -49,5 +60,8 @@ impl<SendMsg, RecvMsg> ThreadChannel<SendMsg, RecvMsg> {
     }
     pub fn recv(&self) -> TryIter<RecvMsg> {
         self.recv.try_iter()
+    }
+    pub fn recv_wait(&self) -> RecvMsg {
+        self.recv.recv().expect("OOOAAAAAAA")
     }
 }

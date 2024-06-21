@@ -1,3 +1,4 @@
+use block_mesh::Voxel;
 use rand::distributions::{Distribution, Standard};
 
 #[repr(C)]
@@ -43,6 +44,16 @@ impl Distribution<VoxelColor> for Standard {
             g: rng.gen(),
             b: rng.gen(),
             a: rng.gen(),
+        }
+    }
+}
+
+impl block_mesh::Voxel for VoxelColor {
+    fn get_visibility(&self) -> block_mesh::VoxelVisibility {
+        match self.a {
+            0 => block_mesh::VoxelVisibility::Empty,
+            255 => block_mesh::VoxelVisibility::Opaque,
+            _ => block_mesh::VoxelVisibility::Translucent,
         }
     }
 }
