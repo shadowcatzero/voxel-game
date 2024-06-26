@@ -35,7 +35,7 @@ pub fn chunks(
             fp.y.floor() as i32,
             fp.z.floor() as i32,
         );
-        let radius: i32 = 5;
+        let radius: i32 = 1;
         let width = radius * 2 - 1;
         let mut desired = Vec::new();
         for i in 0..width.pow(3) {
@@ -47,6 +47,7 @@ pub fn chunks(
             }
         }
         desired.sort_by(|(da, ..), (db, ..)| da.total_cmp(db));
+        let mut to_load = Vec::new();
         for (_, pos) in desired {
             let coords = pos - player_chunk;
             let pos = ChunkPos(coords);
@@ -63,8 +64,13 @@ pub fn chunks(
                     ));
                     loaded.insert(*pos);
                 } else {
-                    loader.queue(pos);
+                    to_load.push(pos);
                 }
+            }
+        }
+        for pos in to_load {
+            if !loader.try_load(pos) {
+                break;
             }
         }
     }

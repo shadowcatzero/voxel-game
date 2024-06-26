@@ -1,6 +1,6 @@
 use crate::{
     client::camera::Camera,
-    common::component::{ChunkMesh, ChunkPos},
+    common::component::{ChunkMesh, ChunkPos}, util::oct_tree::OctTree,
 };
 
 use super::{voxel::VoxelColor, Renderer};
@@ -32,6 +32,7 @@ pub struct AddChunk {
     pub id: Entity,
     pub pos: ChunkPos,
     pub mesh: ChunkMesh,
+    pub tree: OctTree,
 }
 
 #[derive(Debug, Clone)]

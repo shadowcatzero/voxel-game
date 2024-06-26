@@ -249,7 +249,7 @@ impl VoxelPipeline {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         belt: &mut wgpu::util::StagingBelt,
-        AddChunk { id, pos, mesh }: AddChunk,
+        AddChunk { id, pos, mesh, .. }: AddChunk,
     ) {
         if mesh.faces.iter().all(|f| f.is_empty()) {
             return;

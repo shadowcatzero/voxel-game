@@ -57,14 +57,15 @@ pub fn update_transform(
 }
 
 pub fn add_chunk(
-    query: Query<(Entity, &ChunkPos, &ChunkMesh), Or<(Added<ChunkPos>, Added<ChunkMesh>)>>,
+    query: Query<(Entity, &ChunkPos, &ChunkMesh, &ChunkData), Or<(Added<ChunkPos>, Added<ChunkMesh>, Added<ChunkData>)>>,
     mut renderer: ResMut<RenderCommands>,
 ) {
-    for (id, pos, mesh) in query.iter() {
+    for (id, pos, mesh, data) in query.iter() {
         renderer.push(RenderCommand::AddChunk(AddChunk {
             id,
             pos: *pos,
-            mesh: mesh.clone()
+            mesh: mesh.clone(),
+            tree: data.deref().clone(),
         }));
     }
 }
