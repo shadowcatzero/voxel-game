@@ -218,7 +218,7 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
         // return vec4<f32>(vec3<f32>(dir_to_vec(parent_loc)) * f32(loc) / 8.0, 1.0);
         // return vec4<f32>(vec3<f32>(f32(test)), 1.0);
     }
-    return color;
+    return vec4<f32>(1.0, 0.0, 1.0, 1.0);
 }
 
 const LEAF_BIT = 1u << 31u;
