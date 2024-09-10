@@ -155,6 +155,8 @@ impl OctTree {
     pub fn raw(&self) -> &[OctNode] {
         &self.data
     }
+    pub fn mesh(&self) {
+    }
 }
 
 pub struct OctTreeIter<'a> {

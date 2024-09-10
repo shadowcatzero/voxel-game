@@ -55,7 +55,7 @@ impl Client<'_> {
         // camera orientation
         let old_camera = state.camera;
         if self.grabbed_cursor {
-            let delta = input.mouse_delta * 0.003;
+            let delta = input.mouse_delta * 0.003 / state.camera.scale;
             if delta.x != 0.0 {
                 state.camera.orientation = Rotation3::from_axis_angle(&state.camera.up(), delta.x)
                     * state.camera.orientation;

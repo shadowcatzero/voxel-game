@@ -6,7 +6,6 @@ pub use command::*;
 use super::camera::Camera;
 use crate::client::rsc::CLEAR_COLOR;
 use nalgebra::Vector2;
-use smaa::{SmaaMode, SmaaTarget};
 use util::Texture;
 use voxel::VoxelPipeline;
 use winit::dpi::PhysicalSize;
@@ -20,7 +19,6 @@ pub struct Renderer<'a> {
     config: wgpu::SurfaceConfiguration,
     staging_belt: wgpu::util::StagingBelt,
     voxel_pipeline: VoxelPipeline,
-    smaa_target: SmaaTarget,
     camera: Camera,
     depth_texture: Texture,
 }
@@ -43,6 +41,7 @@ impl<'a> Renderer<'a> {
                 label: None,
                 required_features: wgpu::Features::empty(),
                 required_limits: wgpu::Limits::default(),
+                memory_hints: wgpu::MemoryHints::default(),
             },
             None, // Trace path
         ))
@@ -79,15 +78,6 @@ impl<'a> Renderer<'a> {
         // doesn't affect performance much and depends on "normal" zoom
         let staging_belt = wgpu::util::StagingBelt::new(4096 * 4);
 
-        let smaa_target = SmaaTarget::new(
-            &device,
-            &queue,
-            size.width,
-            size.height,
-            surface_format,
-            SmaaMode::Smaa1X,
-        );
-
         let depth_texture = Texture::create_depth_texture(&device, &config, "depth_texture");
 
         Self {
@@ -100,7 +90,6 @@ impl<'a> Renderer<'a> {
             device,
             config,
             queue,
-            smaa_target,
             depth_texture,
         }
     }
@@ -117,34 +106,29 @@ impl<'a> Renderer<'a> {
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        let smaa_frame = self
-            .smaa_target
-            .start_frame(&self.device, &self.queue, &view);
-        {
-            let render_pass = &mut encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &smaa_frame,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(CLEAR_COLOR),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_texture.view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(CLEAR_COLOR),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &self.depth_texture.view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
                 }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-            self.voxel_pipeline.draw(render_pass);
-        }
-        smaa_frame.resolve();
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+        self.voxel_pipeline.draw(&mut render_pass);
+        drop(render_pass);
 
         self.staging_belt.finish();
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -157,8 +141,6 @@ impl<'a> Renderer<'a> {
         self.config.width = size.width;
         self.config.height = size.height;
         self.surface.configure(&self.device, &self.config);
-        self.smaa_target
-            .resize(&self.device, size.width, size.height);
 
         self.depth_texture =
             Texture::create_depth_texture(&self.device, &self.config, "depth_texture");

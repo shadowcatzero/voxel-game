@@ -5,6 +5,7 @@ mod light;
 mod view;
 
 pub use color::*;
+use wgpu::include_wgsl;
 
 use super::super::UpdateGridTransform;
 use crate::{client::{
@@ -35,10 +36,7 @@ pub struct VoxelPipeline {
 impl VoxelPipeline {
     pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
         // shaders
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Tile Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
-        });
+        let shader = device.create_shader_module(include_wgsl!("shader.wgsl"));
 
         let view = Uniform::init(device, "view", 0);
         let voxels = Storage::init(device, "voxels", 1);
@@ -123,6 +121,7 @@ impl VoxelPipeline {
                 alpha_to_coverage_enabled: true,
             },
             multiview: None,
+            cache: None,
         });
 
         Self {

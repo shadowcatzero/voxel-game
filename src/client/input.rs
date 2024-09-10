@@ -83,6 +83,12 @@ impl Input {
                     self.mouse_just_released.insert(button);
                 }
             },
+            WindowEvent::MouseWheel { device_id, delta, phase } => {
+                self.scroll_delta = match delta {
+                    MouseScrollDelta::LineDelta(_, v) => v,
+                    MouseScrollDelta::PixelDelta(v) => (v.y / 2.0) as f32,
+                };
+            }
             _ => (),
         }
     }

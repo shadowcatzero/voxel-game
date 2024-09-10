@@ -145,10 +145,12 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
     var data_start = 1u;
     var i = 0u;
     var axis = 0;
+    var hits = 0;
     for (var safety = 0; safety < 1000; safety += 1) {
         let node = voxels[group.offset + i];
         if node >= LEAF_BIT {
             // leaf
+            hits += 1;
             let vcolor = get_color(node & LEAF_MASK);
             if vcolor.a > 0.0 {
                 let diffuse = max(dot(global_lights[0].dir, next_normal) + 0.1, 0.0);
@@ -156,7 +158,6 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
                 let lighting = max(diffuse, ambient);
                 let new_color = min(vcolor.xyz * lighting, vec3<f32>(1.0));
                 color += vec4<f32>(new_color.xyz * vcolor.a, vcolor.a) * (1.0 - color.a);
-                color = vec4<f32>(f32(safety) / 1000.0, 0.0, 0.0, 1.0);
                 if color.a > .999 {
                     return color;
                 }
@@ -191,8 +192,7 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
 
         // idrk what to put here tbh but this prolly works; don't zoom out if max
         if side_len == 256 {
-            let a = f32(safety) / 1000.0;
-            return vec4<f32>(0.0, 0.0, a, 1.0);
+            return color;
         }
 
         // get parent info and reset "pointers" to parent
