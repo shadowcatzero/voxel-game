@@ -4,20 +4,22 @@ use wgpu::BufferUsages;
 pub struct Storage<T: bytemuck::Pod> {
     binding: u32,
     buf: ArrBuf<T>,
+    visibility: wgpu::ShaderStages,
 }
 
 impl<T: bytemuck::Pod> Storage<T> {
-    pub fn init(device: &wgpu::Device, label: &str, binding: u32) -> Self {
+    pub fn init(device: &wgpu::Device, visibility: wgpu::ShaderStages, label: &str, binding: u32) -> Self {
         Self {
             buf: ArrBuf::init(
                 device,
                 &(label.to_owned() + " Storage"),
                 BufferUsages::STORAGE,
             ),
+            visibility,
             binding,
         }
     }
-    pub fn init_with(device: &wgpu::Device, label: &str, binding: u32, data: &[T]) -> Self {
+    pub fn init_with(device: &wgpu::Device, visibility: wgpu::ShaderStages, label: &str, binding: u32, data: &[T]) -> Self {
         Self {
             buf: ArrBuf::init_with(
                 device,
@@ -25,6 +27,7 @@ impl<T: bytemuck::Pod> Storage<T> {
                 BufferUsages::STORAGE,
                 data
             ),
+            visibility,
             binding,
         }
     }
@@ -34,7 +37,7 @@ impl<T: bytemuck::Pod> Storage<T> {
     pub fn bind_group_layout_entry(&self) -> wgpu::BindGroupLayoutEntry {
         wgpu::BindGroupLayoutEntry {
             binding: self.binding,
-            visibility: wgpu::ShaderStages::FRAGMENT,
+            visibility: self.visibility,
             ty: wgpu::BindingType::Buffer {
                 ty: wgpu::BufferBindingType::Storage { read_only: true },
                 has_dynamic_offset: false,

@@ -1,11 +1,16 @@
-// Vertex shader
+@group(0) @binding(0)
+var<uniform> view: View;
+@group(0) @binding(1)
+var<storage, read> voxels: array<u32>;
+@group(0) @binding(2)
+var<storage, read> voxel_groups: array<VoxelGroup>;
+@group(0) @binding(3)
+var<storage, read> global_lights: array<GlobalLight>;
+@group(0) @binding(4)
+var output: texture_storage_2d<rgba8unorm, write>;
 
 struct GlobalLight {
     dir: vec3<f32>,
-};
-
-struct VertexOutput {
-    @builtin(position) clip_position: vec4<f32>,
 };
 
 struct View {
@@ -22,45 +27,16 @@ struct VoxelGroup {
     offset: u32,
 };
 
-@group(0) @binding(0)
-var<uniform> view: View;
-@group(0) @binding(1)
-var<storage, read> voxels: array<u32>;
-@group(0) @binding(2)
-var<storage, read> voxel_groups: array<VoxelGroup>;
-@group(0) @binding(3)
-var<storage, read> global_lights: array<GlobalLight>;
-
-@vertex
-fn vs_main(
-    @builtin(vertex_index) vi: u32,
-    @builtin(instance_index) ii: u32,
-) -> VertexOutput {
-    var out: VertexOutput;
-
-    var pos = vec2<f32>(
-        f32(vi % 2u) * 2.0 - 1.0,
-        f32(vi / 2u) * 2.0 - 1.0,
-    ) ;
-    out.clip_position = vec4<f32>(pos.x, pos.y, 0.0, 1.0);
-    return out;
-}
-
-// Fragment shader
-
-@fragment
-fn fs_main(
-    in: VertexOutput,
-) -> @location(0) vec4<f32> {
+@compute
+@workgroup_size(16, 16, 1)
+fn main(@builtin(global_invocation_id) cell: vec3<u32>) {
     // get position of the pixel; eye at origin, pixel on plane z = 1
     let win_dim = vec2<f32>(f32(view.width), f32(view.height));
     let aspect = win_dim.y / win_dim.x;
     let pixel_pos = vec3<f32>(
-        (in.clip_position.xy / win_dim - vec2<f32>(0.5)) * vec2<f32>(2.0, -2.0 * aspect),
+        (vec2<f32>(cell.xy) / win_dim - vec2<f32>(0.5)) * vec2<f32>(2.0, 2.0 * aspect),
         view.zoom
     );
-
-    // move to position in world
     let pos = view.transform * vec4<f32>(pixel_pos, 1.0);
     let dir = view.transform * vec4<f32>(normalize(pixel_pos), 0.0);
 
@@ -69,7 +45,7 @@ fn fs_main(
     let sky_color = light_mult * vec3<f32>(1.0, 1.0, 1.0);
     color += vec4<f32>(sky_color * (1.0 - color.a), 1.0 - color.a);
     color.a = 1.0;
-    return color;
+    textureStore(output, cell.xy, color);
 }
 
 const ZERO3F = vec3<f32>(0.0);
@@ -145,20 +121,22 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
     var data_start = 1u;
     var i = 0u;
     var axis = 0;
-    var hits = 0;
+    var parents = array<u32, 8>();
+    var scale = 0;
     for (var safety = 0; safety < 1000; safety += 1) {
         let node = voxels[group.offset + i];
         if node >= LEAF_BIT {
             // leaf
-            hits += 1;
-            let vcolor = get_color(node & LEAF_MASK);
-            if vcolor.a > 0.0 {
+            let leaf = node & LEAF_MASK;
+            if leaf != 0 {
+                let vcolor = get_color(leaf);
                 let diffuse = max(dot(global_lights[0].dir, next_normal) + 0.1, 0.0);
                 let ambient = 0.2;
                 let lighting = max(diffuse, ambient);
                 let new_color = min(vcolor.xyz * lighting, vec3<f32>(1.0));
                 color += vec4<f32>(new_color.xyz * vcolor.a, vcolor.a) * (1.0 - color.a);
                 if color.a > .999 {
+                    // return vec4<f32>(f32(safety) / 1000.0, 0.0, 0.0, 1.0);
                     return color;
                 }
             }
@@ -177,33 +155,34 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
             vox_pos[axis] += dir_i[axis];
         } else if inside3i(vox_pos, vec3<i32>(0), vec3<i32>(side_len - 1)) {
             // node
-            let node_pos = data_start + node;
+            parents[scale] = (data_start << 3) + (data_start - i - 1);
+            scale += 1;
+
+            let children_pos = data_start + node;
             side_len /= 2;
             let vcorner = vox_pos / side_len;
-            vox_pos -= vcorner * side_len;
-            let j = u32(vcorner.x * 4 + vcorner.y * 2 + vcorner.z);
-            i = node_pos + j;
-            data_start = node_pos + 9;
+            let child_pos = u32(vcorner.x * 4 + vcorner.y * 2 + vcorner.z);
+            i = children_pos + child_pos;
+            data_start = children_pos + 8;
 
-            low_corner += vec3<i32>(dir_to_vec(j)) * i32(side_len);
+            vox_pos -= vcorner * side_len;
+            low_corner += vec3<i32>(dir_to_vec(child_pos)) * i32(side_len);
 
             continue;
         }
 
-        // idrk what to put here tbh but this prolly works; don't zoom out if max
-        if side_len == 256 {
+        // exit if highest node
+        if scale == 0 {
+            // return vec4<f32>(f32(safety) / 1000.0, 0.0, 0.0, 1.0);
             return color;
         }
 
         // get parent info and reset "pointers" to parent
-        let parent_info_i = data_start - 1;
-        let parent_info = voxels[group.offset + parent_info_i];
-        let parent_root = parent_info_i - (parent_info >> 3);
-        let parent_loc = parent_info & 7;
-        let loc = 8 - (data_start - 1 - i);
-        // let test = (parent_root + 9 + voxels[group.offset + parent_root + parent_loc] + loc) == i;
-        i = parent_root + parent_loc;
-        data_start = parent_root + 9;
+        scale -= 1;
+        let parent_info = parents[scale];
+        let loc = 8 - (data_start - i);
+        data_start = parent_info >> 3;
+        i = data_start - ((parent_info & 7) + 1);
 
         // adjust corner back to parent
         let low_corner_adj = vec3<i32>(dir_to_vec(loc)) * i32(side_len);
@@ -213,8 +192,6 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
         vox_pos += low_corner_adj;
 
         side_len *= 2;
-        // return vec4<f32>(vec3<f32>(dir_to_vec(parent_loc)) * f32(loc) / 8.0, 1.0);
-        // return vec4<f32>(vec3<f32>(f32(test)), 1.0);
     }
     return vec4<f32>(1.0, 0.0, 1.0, 1.0);
 }
@@ -258,7 +235,7 @@ fn get_color(id: u32) -> vec4<f32> {
             return vec4<f32>(0.5, 0.5, 0.5, 1.0);
         }
         case 2u: {
-            return vec4<f32>(0.5, 1.0, 0.5, 1.0);
+            return vec4<f32>(0.8, 0.2, 0.2, 1.0);
         }
         case 3u: {
             return vec4<f32>(0.5, 0.5, 1.0, 0.5);

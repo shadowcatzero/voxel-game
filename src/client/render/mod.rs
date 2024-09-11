@@ -6,7 +6,7 @@ pub use command::*;
 use super::camera::Camera;
 use crate::client::rsc::CLEAR_COLOR;
 use nalgebra::Vector2;
-use util::Texture;
+use util::DepthTexture;
 use voxel::VoxelPipeline;
 use winit::dpi::PhysicalSize;
 
@@ -20,7 +20,7 @@ pub struct Renderer<'a> {
     staging_belt: wgpu::util::StagingBelt,
     voxel_pipeline: VoxelPipeline,
     camera: Camera,
-    depth_texture: Texture,
+    depth_texture: DepthTexture,
 }
 
 impl<'a> Renderer<'a> {
@@ -78,7 +78,7 @@ impl<'a> Renderer<'a> {
         // doesn't affect performance much and depends on "normal" zoom
         let staging_belt = wgpu::util::StagingBelt::new(4096 * 4);
 
-        let depth_texture = Texture::create_depth_texture(&device, &config, "depth_texture");
+        let depth_texture = DepthTexture::init(&device, &config, "depth_texture");
 
         Self {
             camera: Camera::default(),
@@ -106,6 +106,13 @@ impl<'a> Renderer<'a> {
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
+        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: None,
+            timestamp_writes: None,
+        });
+        self.voxel_pipeline.compute(&mut compute_pass, self.config.width, self.config.height);
+        drop(compute_pass);
+
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -141,9 +148,10 @@ impl<'a> Renderer<'a> {
         self.config.width = size.width;
         self.config.height = size.height;
         self.surface.configure(&self.device, &self.config);
+        self.voxel_pipeline.resize(&self.device, self.size);
 
         self.depth_texture =
-            Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
+            DepthTexture::init(&self.device, &self.config, "depth_texture");
         self.voxel_pipeline.update_view(
             &self.device,
             &mut self.encoder,

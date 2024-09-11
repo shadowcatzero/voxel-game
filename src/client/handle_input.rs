@@ -84,7 +84,7 @@ impl Client<'_> {
         }
 
         // camera position
-        let move_dist = 2.0 * 16.0 * dt;
+        let move_dist = 64.0 * dt;
         if input.pressed(Key::KeyW) {
             state.camera.pos += *state.camera.forward() * move_dist;
         }

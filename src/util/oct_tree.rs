@@ -1,25 +1,22 @@
-use std::{collections::VecDeque, fmt::Debug};
+use std::fmt::Debug;
 
 use nalgebra::Vector3;
 use ndarray::ArrayView3;
 
 const LEAF_BIT: u32 = 1 << 31;
-const DATA_OFFSET: usize = 9;
+const DATA_OFFSET: usize = 8;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct OctNode(u32);
 impl OctNode {
-    pub fn new_node(addr: u32) -> Self {
+    pub const fn new_node(addr: u32) -> Self {
         Self(addr)
     }
-    pub fn new_leaf(data: u32) -> Self {
+    pub const fn new_leaf(data: u32) -> Self {
         Self(data | LEAF_BIT)
     }
-    pub fn new_parent(offset: u32, corner: u32) -> Self {
-        Self((offset << 3) + corner)
-    }
-    pub fn is_leaf(&self) -> bool {
+    pub const fn is_leaf(&self) -> bool {
         self.0 >= LEAF_BIT
     }
     pub fn is_node(&self) -> bool {
@@ -69,10 +66,7 @@ impl OctTree {
     ) -> Self {
         let mut data = Vec::new();
         data.push(OctNode::new_node(0));
-        // #######N P SSSSSSSS P
-        // --------------------| 17
-        // -------| 7
-        Self::from_fn_offset_inner(f, &mut data, levels, offset, OctNode::new_parent(17, 7));
+        Self::from_fn_offset_inner(f, &mut data, levels, offset);
         if data.len() == 2 {
             data.remove(0);
         }
@@ -87,7 +81,6 @@ impl OctTree {
         accumulator: &mut Vec<OctNode>,
         level: u32,
         offset: Vector3<usize>,
-        parent: OctNode,
     ) {
         if level == 0 {
             accumulator.push(OctNode::new_leaf(f(offset)));
@@ -95,27 +88,23 @@ impl OctTree {
         } else if level == 1 {
             let leaves: [OctNode; 8] =
                 core::array::from_fn(|i| OctNode::new_leaf(f(offset + CORNERS[i])));
-            if leaves.iter().all(|l| *l == leaves[0]) {
+            if leaves[1..].iter().all(|l| *l == leaves[0]) {
                 accumulator.push(leaves[0]);
             } else {
                 accumulator.extend_from_slice(&leaves);
-                accumulator.push(parent);
             }
             return;
         }
         let i = accumulator.len();
         accumulator.resize(i + 8, OctNode::new_node(0));
-        accumulator.push(parent);
         let mut data_start = 0;
         for (j, corner_offset) in CORNERS.iter().enumerate() {
             let sub_start = accumulator.len();
-            let sub_parent_offset = 9 + data_start + 8;
             Self::from_fn_offset_inner(
                 f,
                 accumulator,
                 level - 1,
                 offset + corner_offset * 2usize.pow(level - 1),
-                OctNode::new_parent(sub_parent_offset as u32, j as u32),
             );
             let len = accumulator.len() - sub_start;
             if len == 1 {
@@ -128,12 +117,13 @@ impl OctTree {
         }
         if data_start == 0 {
             let first = accumulator[i];
-            if accumulator[i..i + 8].iter().all(|l| *l == first) {
+            if accumulator[i + 1..i + 8].iter().all(|l| *l == first) {
                 accumulator.truncate(i);
-                accumulator.push(first)
+                accumulator.push(first);
             }
         }
     }
+
     pub fn from_arr(arr: ArrayView3<u32>, levels: u32) -> Self {
         Self::from_fn(&mut |p| arr[(p.x, p.y, p.z)], levels)
     }
@@ -155,8 +145,7 @@ impl OctTree {
     pub fn raw(&self) -> &[OctNode] {
         &self.data
     }
-    pub fn mesh(&self) {
-    }
+    pub fn mesh(&self) {}
 }
 
 pub struct OctTreeIter<'a> {

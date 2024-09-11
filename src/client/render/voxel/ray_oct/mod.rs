@@ -8,13 +8,17 @@ pub use color::*;
 use wgpu::include_wgsl;
 
 use super::super::UpdateGridTransform;
-use crate::{client::{
-    camera::Camera,
-    render::{
-        util::{ArrBufUpdate, Storage, Texture, Uniform},
-        AddChunk, CreateVoxelGrid,
+use crate::{
+    client::{
+        camera::Camera,
+        render::{
+            util::{ArrBufUpdate, DepthTexture, Storage, StorageTexture, Uniform},
+            AddChunk, CreateVoxelGrid,
+        },
     },
-}, common::component::chunk, util::oct_tree::OctNode};
+    common::component::chunk,
+    util::oct_tree::OctNode,
+};
 use bevy_ecs::entity::Entity;
 use light::GlobalLight;
 use nalgebra::{Projective3, Transform3, Translation3, Vector2, Vector3};
@@ -23,6 +27,11 @@ use std::{collections::HashMap, ops::Deref};
 use {group::VoxelGroup, view::View};
 
 pub struct VoxelPipeline {
+    compute_pipeline: wgpu::ComputePipeline,
+    texture: StorageTexture,
+    cbind_group_layout: wgpu::BindGroupLayout,
+    cbind_group: wgpu::BindGroup,
+
     pipeline: wgpu::RenderPipeline,
     view: Uniform<View>,
     bind_group_layout: wgpu::BindGroupLayout,
@@ -36,27 +45,54 @@ pub struct VoxelPipeline {
 impl VoxelPipeline {
     pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
         // shaders
-        let shader = device.create_shader_module(include_wgsl!("shader.wgsl"));
+        let shader = device.create_shader_module(include_wgsl!("render.wgsl"));
 
         let view = Uniform::init(device, "view", 0);
-        let voxels = Storage::init(device, "voxels", 1);
-        let voxel_groups = Storage::init(device, "voxel groups", 2);
+        let voxels = Storage::init(device, wgpu::ShaderStages::COMPUTE, "voxels", 1);
+        let voxel_groups = Storage::init(device, wgpu::ShaderStages::COMPUTE, "voxel groups", 2);
         let global_lights = Storage::init_with(
             device,
+            wgpu::ShaderStages::COMPUTE,
             "global lights",
             3,
             &[GlobalLight {
                 direction: Vector3::new(-0.5, -4.0, 2.0).normalize(),
             }],
         );
+        let texture = StorageTexture::init(
+            device,
+            wgpu::Extent3d {
+                width: 1920,
+                height: 1080,
+                depth_or_array_layers: 1,
+            },
+            "idk man im tired",
+            wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
+            4,
+        );
 
         // bind groups
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 view.bind_group_layout_entry(),
-                voxels.bind_group_layout_entry(),
-                voxel_groups.bind_group_layout_entry(),
-                global_lights.bind_group_layout_entry(),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    // This should match the filterable field of the
+                    // corresponding Texture entry above.
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
             ],
             label: Some("tile_bind_group_layout"),
         });
@@ -65,9 +101,14 @@ impl VoxelPipeline {
             layout: &bind_group_layout,
             entries: &[
                 view.bind_group_entry(),
-                voxels.bind_group_entry(),
-                voxel_groups.bind_group_entry(),
-                global_lights.bind_group_entry(),
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&texture.sampler),
+                },
             ],
             label: Some("tile_bind_group"),
         });
@@ -109,7 +150,7 @@ impl VoxelPipeline {
                 conservative: false,
             },
             depth_stencil: Some(wgpu::DepthStencilState {
-                format: Texture::DEPTH_FORMAT,
+                format: DepthTexture::DEPTH_FORMAT,
                 depth_write_enabled: true,
                 depth_compare: wgpu::CompareFunction::Less,
                 stencil: wgpu::StencilState::default(),
@@ -124,7 +165,51 @@ impl VoxelPipeline {
             cache: None,
         });
 
+        let cbind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    view.bind_group_layout_entry(),
+                    voxels.bind_group_layout_entry(),
+                    voxel_groups.bind_group_layout_entry(),
+                    global_lights.bind_group_layout_entry(),
+                    texture.bind_group_layout_entry(),
+                ],
+                label: Some("voxel compute"),
+            });
+
+        let cbind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &cbind_group_layout,
+            entries: &[
+                view.bind_group_entry(),
+                voxels.bind_group_entry(),
+                voxel_groups.bind_group_entry(),
+                global_lights.bind_group_entry(),
+                texture.bind_group_entry(),
+            ],
+            label: Some("voxel compute"),
+        });
+
+        let cpipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("voxel compute"),
+            bind_group_layouts: &[&cbind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        let cs_module = device.create_shader_module(include_wgsl!("compute.wgsl"));
+        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("voxel"),
+            layout: Some(&cpipeline_layout),
+            module: &cs_module,
+            entry_point: "main",
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
         Self {
+            compute_pipeline,
+            texture,
+            cbind_group_layout,
+            cbind_group,
             pipeline: render_pipeline,
             view,
             bind_group,
@@ -196,20 +281,12 @@ impl VoxelPipeline {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         belt: &mut wgpu::util::StagingBelt,
-        AddChunk {
-            id,
-            pos,
-            tree,
-            ..
-        }: AddChunk,
+        AddChunk { id, pos, tree, .. }: AddChunk,
     ) {
         let offset = self.voxels.len();
 
         let data = tree.raw();
-        let updates = [ArrBufUpdate {
-            offset,
-            data,
-        }];
+        let updates = [ArrBufUpdate { offset, data }];
         let size = offset + data.len();
         self.voxels.update(device, encoder, belt, size, &updates);
 
@@ -232,14 +309,48 @@ impl VoxelPipeline {
             .update(device, encoder, belt, size, &updates);
 
         self.id_map.insert(id, (i, group));
+        self.update_bind_group(device);
+    }
 
-        self.bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &self.bind_group_layout,
+    pub fn update_bind_group(&mut self, device: &wgpu::Device) {
+        self.cbind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &self.cbind_group_layout,
             entries: &[
                 self.view.bind_group_entry(),
                 self.voxels.bind_group_entry(),
                 self.voxel_groups.bind_group_entry(),
                 self.global_lights.bind_group_entry(),
+                self.texture.bind_group_entry(),
+            ],
+            label: Some("tile_bind_group"),
+        });
+    }
+
+    pub fn resize(&mut self, device: &wgpu::Device, size: Vector2<u32>) {
+        self.texture = StorageTexture::init(
+            device,
+            wgpu::Extent3d {
+                width: size.x,
+                height: size.y,
+                depth_or_array_layers: 1,
+            },
+            "idk man im tired",
+            wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
+            4,
+        );
+        self.update_bind_group(device);
+        self.bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &self.bind_group_layout,
+            entries: &[
+                self.view.bind_group_entry(),
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&self.texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&self.texture.sampler),
+                },
             ],
             label: Some("tile_bind_group"),
         });
@@ -292,5 +403,11 @@ impl VoxelPipeline {
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, &self.bind_group, &[]);
         render_pass.draw(0..4, 0..1);
+    }
+
+    pub fn compute(&self, pass: &mut wgpu::ComputePass, w: u32, h: u32) {
+        pass.set_pipeline(&self.compute_pipeline);
+        pass.set_bind_group(0, &self.cbind_group, &[]);
+        pass.dispatch_workgroups(w / 16, h / 16, 1);
     }
 }
