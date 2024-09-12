@@ -54,7 +54,7 @@ impl DepthTexture {
 pub struct StorageTexture {
     binding: u32,
     visibility: wgpu::ShaderStages,
-    pub texture: wgpu::Texture,
+    pub buf: wgpu::Texture,
     pub view: wgpu::TextureView,
     pub sampler: wgpu::Sampler,
 }
@@ -97,7 +97,7 @@ impl StorageTexture {
         Self {
             visibility,
             binding,
-            texture,
+            buf: texture,
             view,
             sampler,
         }

@@ -162,7 +162,7 @@ impl Client<'_> {
         match event {
             WindowEvent::CloseRequested => self.exit = true,
             WindowEvent::Resized(size) => self.renderer.resize(size),
-            WindowEvent::RedrawRequested => self.renderer.draw(),
+            // WindowEvent::RedrawRequested => self.renderer.draw(),
             WindowEvent::CursorLeft { .. } => {
                 self.input.clear();
             }

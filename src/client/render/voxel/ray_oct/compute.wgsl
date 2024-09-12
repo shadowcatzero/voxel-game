@@ -28,9 +28,12 @@ struct VoxelGroup {
 };
 
 @compute
-@workgroup_size(16, 16, 1)
+@workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) cell: vec3<u32>) {
     // get position of the pixel; eye at origin, pixel on plane z = 1
+    if cell.x >= view.width || cell.y >= view.height {
+        return;
+    }
     let win_dim = vec2<f32>(f32(view.width), f32(view.height));
     let aspect = win_dim.y / win_dim.x;
     let pixel_pos = vec3<f32>(
@@ -41,8 +44,11 @@ fn main(@builtin(global_invocation_id) cell: vec3<u32>) {
     let dir = view.transform * vec4<f32>(normalize(pixel_pos), 0.0);
 
     var color = trace_full(pos, dir);
+    // var color = vec4<f32>(0.0);
     let light_mult = clamp((-dot(dir.xyz, global_lights[0].dir) - 0.99) * 200.0, 0.0, 1.0);
-    let sky_color = light_mult * vec3<f32>(1.0, 1.0, 1.0);
+    let sun_color = light_mult * vec3<f32>(1.0, 1.0, 1.0);
+    let sky_bg = vec3<f32>(0.3, 0.6, 1.0);
+    let sky_color = sun_color + sky_bg * (1.0 - light_mult);
     color += vec4<f32>(sky_color * (1.0 - color.a), 1.0 - color.a);
     color.a = 1.0;
     textureStore(output, cell.xy, color);
@@ -51,7 +57,7 @@ fn main(@builtin(global_invocation_id) cell: vec3<u32>) {
 const ZERO3F = vec3<f32>(0.0);
 const ZERO2F = vec2<f32>(0.0);
 const DEPTH = 16u;
-const FULL_ALPHA = 0.9999;
+const FULL_ALPHA = 0.999;
 
 fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
     let gi = 0;

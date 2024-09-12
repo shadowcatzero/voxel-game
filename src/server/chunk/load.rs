@@ -111,16 +111,7 @@ fn chunk_loader_main(channel: ThreadChannel<ServerChunkMsg, ChunkLoaderMsg>) {
         match channel.recv_wait() {
             ChunkLoaderMsg::Generate(pos) => {
                 let start = std::time::Instant::now();
-                // let data = ChunkData::from_tree(OctTree::from_arr(
-                //     data.slice(s![
-                //         1..data.len_of(Axis(0)) - 1,
-                //         1..data.len_of(Axis(1)) - 1,
-                //         1..data.len_of(Axis(2)) - 1
-                //     ]),
-                //     8,
-                // ));
                 let tree = ChunkData::from_tree(generate_tree(pos));
-                // let data = ChunkData::empty();
                 let tree_time = std::time::Instant::now() - start;
 
                 let start = std::time::Instant::now();
@@ -168,7 +159,6 @@ fn generate(pos: ChunkPos) -> Array3<u32> {
         return Array3::from_elem(shape, 0);
     }
     let posf: Vector3<f32> = (pos.cast() * chunk::SIDE_LENGTH as f32) - Vector3::from_element(1.0);
-    let (a, b, c, d) = (0.0, 50.0, 100.0, 127.0);
     let (noise, ..) = NoiseBuilder::gradient_2d_offset(
         posf.x,
         chunk::SIDE_LENGTH + 2,
@@ -178,25 +168,7 @@ fn generate(pos: ChunkPos) -> Array3<u32> {
     .with_seed(0)
     .with_freq(0.005)
     .generate();
-    Array3::from_shape_fn(shape, |(x, y, z)| {
-        let y = y as f32 + posf.y;
-        let n = (noise[x + z * (chunk::SIDE_LENGTH + 2)] + 0.022) * (1.0 / 0.044) * d;
-        if y < n.max(b) {
-            if y < b {
-                if y > n {
-                    3
-                } else {
-                    1
-                }
-            } else if y < c {
-                2
-            } else {
-                1
-            }
-        } else {
-            0
-        }
-    })
+    Array3::from_shape_fn(shape, |(x, y, z)| generate_at(Vector3::new(x, y, z), posf, &noise))
 }
 
 fn generate_tree(pos: ChunkPos) -> OctTree {
@@ -204,34 +176,34 @@ fn generate_tree(pos: ChunkPos) -> OctTree {
         return OctTree::from_leaf(0, 8);
     }
     let posf: Vector3<f32> = pos.cast() * chunk::SIDE_LENGTH as f32;
-    let (a, b, c, d) = (0.0, 50.0, 100.0, 127.0);
     let (noise, ..) =
         NoiseBuilder::gradient_2d_offset(posf.x, chunk::SIDE_LENGTH, posf.z, chunk::SIDE_LENGTH)
             .with_seed(0)
             .with_freq(0.005)
             .generate();
-    OctTree::from_fn(
-        &mut |p| {
-            let y = p.y as f32 + posf.y;
-            let n = (noise[p.x + p.z * chunk::SIDE_LENGTH] + 0.022) * (1.0 / 0.044) * d;
-            if y < n.max(b) {
-                if y < b {
-                    if y > n {
-                        3
-                    } else {
-                        1
-                    }
-                } else if y < c {
-                    2
-                } else {
-                    1
-                }
+    OctTree::from_fn_rec(&mut |p| generate_at(p, posf, &noise), 8)
+}
+
+fn generate_at(p: Vector3<usize>, posf: Vector3<f32>, noise: &[f32]) -> u32 {
+    // 0 air 1 stone 2 "sand" 3 water
+    let y = p.y as f32 + posf.y;
+    let (_a, b, c, d) = (0.0, 50.0, 100.0, 127.0);
+    let n = (noise[p.x + p.z * chunk::SIDE_LENGTH] + 0.022) * (1.0 / 0.044) * d;
+    if y < n.max(b) {
+        if y < b {
+            if y > n {
+                3
             } else {
-                0
+                1
             }
-        },
-        8,
-    )
+        } else if y < c {
+            2
+        } else {
+            1
+        }
+    } else {
+        0
+    }
 }
 
 const COLOR_MAP: [VoxelColor; 4] = [

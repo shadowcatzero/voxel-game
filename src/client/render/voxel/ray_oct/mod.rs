@@ -149,13 +149,7 @@ impl VoxelPipeline {
                 unclipped_depth: false,
                 conservative: false,
             },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: DepthTexture::DEPTH_FORMAT,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
+            depth_stencil: None,
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,
@@ -309,10 +303,10 @@ impl VoxelPipeline {
             .update(device, encoder, belt, size, &updates);
 
         self.id_map.insert(id, (i, group));
-        self.update_bind_group(device);
+        self.update_cbind_group(device);
     }
 
-    pub fn update_bind_group(&mut self, device: &wgpu::Device) {
+    pub fn update_cbind_group(&mut self, device: &wgpu::Device) {
         self.cbind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &self.cbind_group_layout,
             entries: &[
@@ -338,7 +332,7 @@ impl VoxelPipeline {
             wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
             4,
         );
-        self.update_bind_group(device);
+        self.update_cbind_group(device);
         self.bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &self.bind_group_layout,
             entries: &[
@@ -405,9 +399,14 @@ impl VoxelPipeline {
         render_pass.draw(0..4, 0..1);
     }
 
-    pub fn compute(&self, pass: &mut wgpu::ComputePass, w: u32, h: u32) {
+    pub const WORKGROUP_SIZE: u32 = 8;
+
+    pub fn compute(&self, pass: &mut wgpu::ComputePass) {
         pass.set_pipeline(&self.compute_pipeline);
         pass.set_bind_group(0, &self.cbind_group, &[]);
-        pass.dispatch_workgroups(w / 16, h / 16, 1);
+        let buf = &self.texture.buf;
+        let x = (buf.width() - 1) / Self::WORKGROUP_SIZE + 1;
+        let y = (buf.height() - 1) / Self::WORKGROUP_SIZE + 1;
+        pass.dispatch_workgroups(x, y, 1);
     }
 }

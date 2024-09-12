@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 
+use bevy_ecs::system::IntoSystem;
 use nalgebra::Vector3;
 use ndarray::ArrayView3;
 
@@ -56,7 +57,7 @@ impl OctTree {
             levels,
         }
     }
-    pub fn from_fn(f: &mut impl FnMut(Vector3<usize>) -> u32, levels: u32) -> OctTree {
+    pub fn from_fn_rec(f: &mut impl FnMut(Vector3<usize>) -> u32, levels: u32) -> OctTree {
         Self::from_fn_offset(f, levels, Vector3::from_element(0))
     }
     pub fn from_fn_offset(
@@ -124,8 +125,55 @@ impl OctTree {
         }
     }
 
+    pub fn from_fn_iter(
+        f: &mut impl FnMut(Vector3<usize>) -> u32,
+        levels: u32,
+    ) -> Self {
+        let mut data = vec![OctNode::new_node(0)];
+        let mut level: usize = 1;
+        let mut children = Vec::new();
+        let mut child = vec![0; levels as usize + 1];
+        let pows: Vec<_> = (0..levels).map(|l| 2usize.pow(l)).collect();
+        while level < levels as usize {
+            if child[level] == 8 {
+                let i = children.len() - 8;
+                let first = children[i];
+                if children[i + 1..].iter().all(|l| *l == first) {
+                    children.truncate(i);
+                    children.push(first);
+                } else {
+                    data.extend_from_slice(&children[i..]);
+                    children.truncate(i);
+                    children.push(OctNode::new_node(data.len() as u32 - 8));
+                }
+                child[level] = 0;
+                level += 1;
+                child[level] += 1;
+            } else if level == 1 {
+                let offset: Vector3<usize> = (level..8).map(|l| CORNERS[child[l]] * pows[l]).sum();
+                let leaves: [OctNode; 8] =
+                    core::array::from_fn(|i| OctNode::new_leaf(f(offset + CORNERS[i])));
+                if leaves[1..].iter().all(|l| *l == leaves[0]) {
+                    children.push(leaves[0]);
+                } else {
+                    children.push(OctNode::new_node(data.len() as u32));
+                    data.extend_from_slice(&leaves);
+                }
+                child[level] += 1;
+            } else {
+                level -= 1;
+            }
+        }
+        data[0] = children[0];
+        Self {
+            data,
+            side_length: 2usize.pow(levels),
+            levels,
+        }
+    }
+
     pub fn from_arr(arr: ArrayView3<u32>, levels: u32) -> Self {
-        Self::from_fn(&mut |p| arr[(p.x, p.y, p.z)], levels)
+        Self::from_fn_rec(&mut |p| arr[(p.x, p.y, p.z)], levels)
     }
     pub fn get(&self, mut pos: Vector3<usize>) -> u32 {
         let mut data_start = 1;

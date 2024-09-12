@@ -110,7 +110,7 @@ impl<'a> Renderer<'a> {
             label: None,
             timestamp_writes: None,
         });
-        self.voxel_pipeline.compute(&mut compute_pass, self.config.width, self.config.height);
+        self.voxel_pipeline.compute(&mut compute_pass);
         drop(compute_pass);
 
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -123,14 +123,15 @@ impl<'a> Renderer<'a> {
                     store: wgpu::StoreOp::Store,
                 },
             })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &self.depth_texture.view,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
-                    store: wgpu::StoreOp::Store,
-                }),
-                stencil_ops: None,
-            }),
+            // depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+            //     view: &self.depth_texture.view,
+            //     depth_ops: Some(wgpu::Operations {
+            //         load: wgpu::LoadOp::Clear(1.0),
+            //         store: wgpu::StoreOp::Store,
+            //     }),
+            //     stencil_ops: None,
+            // }),
+            depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
         });
