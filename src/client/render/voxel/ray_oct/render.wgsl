@@ -41,7 +41,6 @@ fn fs_main(
 ) -> @location(0) vec4<f32> {
     let win_dim = vec2<f32>(f32(view.width), f32(view.height));
     var pos = in.clip_position.xy / win_dim;
-    pos.y = 1.0 - pos.y;
     return textureSample(t_diffuse, s_diffuse, pos);
 }
 

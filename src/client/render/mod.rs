@@ -94,6 +94,14 @@ impl<'a> Renderer<'a> {
         }
     }
 
+    pub fn reset_shader(&mut self) {
+        self.voxel_pipeline.reset_shader(&self.device);
+    }
+
+    pub fn update_shader(&mut self) {
+        self.voxel_pipeline.update_shader(&self.device);
+    }
+
     fn create_encoder(device: &wgpu::Device) -> wgpu::CommandEncoder {
         device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Render Encoder"),

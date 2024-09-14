@@ -55,8 +55,8 @@ fn main(@builtin(global_invocation_id) cell: vec3<u32>) {
 
 const ZERO3F = vec3<f32>(0.0);
 const ZERO2F = vec2<f32>(0.0);
+const DEPTH = 16u;
 const FULL_ALPHA = 0.999;
-const EPSILON = 0.00000000001;
 
 fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
     let gi = 0;
@@ -69,13 +69,9 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
 
     // transform so that group is at 0,0
     let pos_start = (group.transform_inv * pos_view).xyz;
-    var dir = (group.transform_inv * dir_view).xyz;
-    if dir.x == 0 {dir.x = EPSILON;}
-    if dir.y == 0 {dir.y = EPSILON;}
-    if dir.z == 0 {dir.z = EPSILON;}
+    let dir = (group.transform_inv * dir_view).xyz;
 
     let dir_if = sign(dir);
-    let dir_uf = max(dir_if, vec3<f32>(0.0));
 
 
 
@@ -88,95 +84,117 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
     var next_normal = vec3<f32>(0.0, 0.0, 0.0);
 
     // find where ray intersects with group
-    let pos_min = (vec3<f32>(1.0) - dir_uf) * dim_f;
-    let pos_max = dir_uf * dim_f;
+    let plane_point = (vec3<f32>(1.0) - dir_if) / 2.0 * dim_f;
     var pos = pos_start;
-    // time of intersection; x = td + p, solve for t
-    let t_min = (pos_min - pos) / dir;
-    let t_max = (pos_max - pos) / dir;
     var t = 0.0;
     if outside3f(pos, ZERO3F, dim_f) {
+        // time of intersection; x = td + p, solve for t
+        let t_i = (plane_point - pos) / dir;
         // points of intersection
-        let px = pos + t_min.x * dir;
-        let py = pos + t_min.y * dir;
-        let pz = pos + t_min.z * dir;
+        let px = pos + t_i.x * dir;
+        let py = pos + t_i.y * dir;
+        let pz = pos + t_i.z * dir;
 
         // check if point is in bounds
         let hit = vec3<bool>(
             inside2f(px.yz, ZERO2F, dim_f.yz),
             inside2f(py.xz, ZERO2F, dim_f.xz),
             inside2f(pz.xy, ZERO2F, dim_f.xy),
-        ) && (t_min > ZERO3F);
+        ) && (t_i > ZERO3F);
         if !any(hit) {
             return vec4<f32>(0.0);
         }
         pos = select(select(pz, py, hit.y), px, hit.x);
-        t = select(select(t_min.z, t_min.y, hit.y), t_min.x, hit.x);
+        t = select(select(t_i.z, t_i.y, hit.y), t_i.x, hit.x);
         next_normal = select(select(normals[2], normals[1], hit.y), normals[0], hit.x);
     }
+    // voxel position relative to low_corner
     var vox_pos = clamp(vec3<i32>(pos), vec3<i32>(0), dim_i - vec3<i32>(1));
-    let inc_t = abs(1.0 / dir);
+
+
 
     let dir_i = vec3<i32>(dir_if);
-    let dir_u = vec3<u32>((dir_i + vec3<i32>(1)) / 2);
-    let dir_bits = vec_to_dir(dir_u);
-    let inv_dir_bits = 7 - dir_bits;
-
-    var node_start = 1u;
-    var t_center = (t_max + t_min) / 2.0;
-    var half_t_span = f32(256 / 2) * inc_t;
-    var scale = 0;
-
-    var dir_idx = vec3<u32>(vec3<f32>(t) > t_center);
-    var child = vec_to_dir(dir_idx);
-    var parents = array<u32, 8>();
+    let dir_u = ((dir_i + vec3<i32>(1)) / 2);
+    let dir_bits = u32(dir_u.x * 4 + dir_u.y * 2 + dir_u.z);
+    // time to move 1 unit using dir
+    let inc_t = abs(1.0 / dir);
+    var side_len = 256;
+    // "unsigned" minimum cube coords of current tree
+    var low_corner = vec3<i32>(0);
+    // time of next 1 unit plane hit in each direction
     var color = vec4<f32>(0.0);
-
+    var data_start = 1u;
+    var i = 0u;
+    var parents = array<u32, 8>();
+    var scale = 0;
     for (var safety = 0; safety < 1000; safety += 1) {
-        let node = voxels[group.offset + node_start + (child ^ inv_dir_bits)];
+        let node = voxels[group.offset + i];
         if node >= LEAF_BIT {
-            let vcolor = get_color(node & LEAF_MASK);
-            if vcolor.a > 0.0 {
+            // leaf
+            let leaf = node & LEAF_MASK;
+            if leaf != 0 {
+                let vcolor = get_color(leaf);
                 let diffuse = max(dot(global_lights[0].dir, next_normal) + 0.1, 0.0);
                 let ambient = 0.2;
                 let lighting = max(diffuse, ambient);
                 let new_color = min(vcolor.xyz * lighting, vec3<f32>(1.0));
                 color += vec4<f32>(new_color.xyz * vcolor.a, vcolor.a) * (1.0 - color.a);
-                if color.a > FULL_ALPHA { return color; }
+                if color.a > .999 {
+                    // return vec4<f32>(f32(safety) / 1000.0, 0.0, 0.0, 1.0);
+                    return color;
+                }
             }
 
-            let center_adj = t_center + half_t_span * vec3<f32>(dir_idx);
-            t = min(min(center_adj.x, center_adj.y), center_adj.z);
-            var move_dir = 0u;
-            if t == center_adj.x { move_dir = 4u; next_normal = normals[0]; }
-            if t == center_adj.y { move_dir = 2u; next_normal = normals[1]; }
-            if t == center_adj.z { move_dir = 1u; next_normal = normals[2]; }
-            if move_dir == 0 { return vec4<f32>(1.0); }
-            while (child & move_dir) > 0 {
-                if scale == 0 { return color; }
-
-                scale -= 1;
-                let parent_info = parents[scale];
-                node_start = parent_info >> 3;
-                child = parent_info & 7;
-
-                dir_idx = dir_to_vec(child);
-                t_center -= half_t_span * (vec3<f32>(dir_idx * 2) - 1.0);
-                half_t_span *= 2.0;
-            }
-            child = child ^ move_dir;
-            dir_idx = dir_to_vec(child);
-        } else {
-            parents[scale] = (node_start << 3) + child;
+            // move to next face of cube
+            let half_len = f32(side_len) / 2.0;
+            let corner = vec3<f32>(low_corner) + vec3<f32>(half_len) + dir_if * half_len;
+            let next_t = inc_t * abs(corner - pos_start);
+            let axis = select(select(2, 1, next_t.y < next_t.z), 0, next_t.x < next_t.y && next_t.x < next_t.z);
+            t = next_t[axis];
+            next_normal = normals[axis];
+            pos = pos_start + t * dir;
+            vox_pos = vec3<i32>(pos) - low_corner;
+            vox_pos = clamp(vox_pos, vec3<i32>(0), side_len - vec3<i32>(1));
+            vox_pos[axis] += dir_i[axis];
+        } else if inside3i(vox_pos, vec3<i32>(0), vec3<i32>(side_len - 1)) {
+            // node
+            parents[scale] = (data_start << 3) + (data_start - i - 1);
             scale += 1;
 
-            half_t_span /= 2.0;
-            t_center += half_t_span * (vec3<f32>(dir_idx * 2) - 1.0);
-            dir_idx = vec3<u32>(vec3<f32>(t) > t_center);
+            let children_pos = data_start + node;
+            side_len /= 2;
+            let vcorner = vox_pos / side_len;
+            let child_pos = u32(vcorner.x * 4 + vcorner.y * 2 + vcorner.z);
+            i = children_pos + child_pos;
+            data_start = children_pos + 8;
 
-            child = vec_to_dir(dir_idx);
-            node_start = node_start + 8 + node;
+            vox_pos -= vcorner * side_len;
+            low_corner += vec3<i32>(dir_to_vec(child_pos)) * i32(side_len);
+
+            continue;
         }
+
+        // exit if highest node
+        if scale == 0 {
+            // return vec4<f32>(f32(safety) / 1000.0, 0.0, 0.0, 1.0);
+            return color;
+        }
+
+        // get parent info and reset "pointers" to parent
+        scale -= 1;
+        let parent_info = parents[scale];
+        let loc = 8 - (data_start - i);
+        data_start = parent_info >> 3;
+        i = data_start - ((parent_info & 7) + 1);
+
+        // adjust corner back to parent
+        let low_corner_adj = vec3<i32>(dir_to_vec(loc)) * i32(side_len);
+        low_corner -= low_corner_adj;
+
+        // update vox pos to be relative to parent
+        vox_pos += low_corner_adj;
+
+        side_len *= 2;
     }
     return vec4<f32>(1.0, 0.0, 1.0, 1.0);
 }
@@ -184,13 +202,31 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
 const LEAF_BIT = 1u << 31u;
 const LEAF_MASK = ~LEAF_BIT;
 
-// no clue if this is efficient, mod is faster for all I know
+// there's no way this is efficient, mod is faster for all I know
 fn dir_to_vec(bits: u32) -> vec3<u32> {
     return vec3<u32>(extractBits(bits, 2u, 1u), extractBits(bits, 1u, 1u), extractBits(bits, 0u, 1u));
 }
 
-fn vec_to_dir(vec: vec3<u32>) -> u32 {
-    return vec.x * 4 + vec.y * 2 + vec.z * 1;
+fn get_voxel(offset: u32, pos_: vec3<u32>) -> u32 {
+    var data_start = 1u;
+    var i = 0u;
+    var pos = pos_;
+    var side_len: u32 = 256;
+    var safety = 0;
+    while voxels[offset + i] < LEAF_BIT {
+        let node_pos = data_start + voxels[offset + i];
+        side_len /= 2u;
+        let corner = pos / side_len;
+        pos -= corner * side_len;
+        let j = corner.x * 4 + corner.y * 2 + corner.z;
+        i = node_pos + j;
+        data_start = node_pos + 8;
+        if safety == 10 {
+            return 10u;
+        }
+        safety += 1;
+    }
+    return voxels[offset + i] & LEAF_MASK;
 }
 
 fn get_color(id: u32) -> vec4<f32> {
@@ -202,7 +238,7 @@ fn get_color(id: u32) -> vec4<f32> {
             return vec4<f32>(0.5, 0.5, 0.5, 1.0);
         }
         case 2u: {
-            return vec4<f32>(0.5, 1.0, 0.5, 1.0);
+            return vec4<f32>(0.8, 0.2, 0.2, 1.0);
         }
         case 3u: {
             return vec4<f32>(0.5, 0.5, 1.0, 0.5);

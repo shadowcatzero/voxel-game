@@ -123,5 +123,12 @@ impl Client<'_> {
                     })),
                 }));
         }
+
+        if input.just_pressed(Key::KeyR) {
+            self.renderer.update_shader();
+        }
+        if input.just_pressed(Key::KeyT) {
+            self.renderer.reset_shader();
+        }
     }
 }
