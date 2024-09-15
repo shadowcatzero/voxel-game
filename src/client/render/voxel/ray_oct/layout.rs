@@ -31,7 +31,7 @@ impl Layout {
             "global lights",
             3,
             &[GlobalLight {
-                direction: Vector3::new(-0.5, -4.0, 2.0).normalize(),
+                direction: Vector3::new(-1.0, -2.0, 2.0).normalize(),
             }],
         );
         let texture = StorageTexture::init(

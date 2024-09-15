@@ -59,6 +59,9 @@ const FULL_ALPHA = 0.999;
 const EPSILON = 0.00000000001;
 const MAX_ITERS = 1000;
 
+const MAX_DEPTH: u32 = 10;
+const MAX_LENGTH: u32 = (1u << MAX_DEPTH);
+
 fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
     let gi = 0;
     let group = voxel_groups[gi];
@@ -124,11 +127,11 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
     let inv_dir_bits = 7 - dir_bits;
 
     var node_start = 1u;
-    var scale = 7u;
+    var scale = MAX_DEPTH - 1;
     var half_t_span = f32(1u << scale) * inc_t;
     var t_center = t_min + half_t_span;
     var color = vec4<f32>(0.0);
-    var parents = array<u32, 8>();
+    var parents = array<u32, MAX_DEPTH>();
 
     var child = (u32(t > t_center.x) << 2) + (u32(t > t_center.y) << 1) + u32(t > t_center.z);
     var child_pos = dir_to_vec(child);
@@ -162,7 +165,7 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
             if (child & move_dir) > 0 {
                 // calculate new scale; first differing bit after adding
                 let new_pos = vox_pos[axis] + (1u << scale);
-                if new_pos == 256 { break; }
+                if new_pos == MAX_LENGTH { break; }
                 let differing = vox_pos[axis] ^ new_pos;
                 vox_pos[axis] = new_pos;
                 scale = firstLeadingBit(differing);

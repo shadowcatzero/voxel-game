@@ -114,36 +114,37 @@ fn chunk_loader_main(channel: ThreadChannel<ServerChunkMsg, ChunkLoaderMsg>) {
                 let tree = ChunkData::from_tree(generate_tree(pos));
                 let tree_time = std::time::Instant::now() - start;
 
-                let start = std::time::Instant::now();
-                let mut data = generate(pos);
-                let data_time = std::time::Instant::now() - start;
-
-                let start = std::time::Instant::now();
-                let shape = s![
-                    1..data.len_of(Axis(0)) - 1,
-                    1..data.len_of(Axis(1)) - 1,
-                    1..data.len_of(Axis(2)) - 1
-                ];
-                let mut slice = data.slice_mut(shape);
-                let mut iter = tree.into_iter();
-                slice.assign(&Array3::from_shape_fn((256, 256, 256), |_| {
-                    iter.next().unwrap()
-                }));
-                let convert_time = std::time::Instant::now() - start;
-
-                let start = std::time::Instant::now();
-                let mesh = ChunkMesh::from_data(data.map(|i| COLOR_MAP[*i as usize]).view());
-                let mesh_time = std::time::Instant::now() - start;
-
-                println!(
-                    "data: {:<5?} mesh: {:<5?} convert: {:<5?} tree: {:<5?}",
-                    data_time, mesh_time, convert_time, tree_time
-                );
+                // let start = std::time::Instant::now();
+                // let mut data = generate(pos);
+                // let data_time = std::time::Instant::now() - start;
+                //
+                // let start = std::time::Instant::now();
+                // let shape = s![
+                //     1..data.len_of(Axis(0)) - 1,
+                //     1..data.len_of(Axis(1)) - 1,
+                //     1..data.len_of(Axis(2)) - 1
+                // ];
+                // let mut slice = data.slice_mut(shape);
+                // let mut iter = tree.into_iter();
+                // slice.assign(&Array3::from_shape_fn(chunk::SHAPE, |_| {
+                //     iter.next().unwrap()
+                // }));
+                // let convert_time = std::time::Instant::now() - start;
+                //
+                // let start = std::time::Instant::now();
+                // let mesh = ChunkMesh::from_data(data.map(|i| COLOR_MAP[*i as usize]).view());
+                // let mesh_time = std::time::Instant::now() - start;
+                //
+                // println!(
+                //     "data: {:<5?} mesh: {:<5?} convert: {:<5?} tree: {:<5?}",
+                //     data_time, mesh_time, convert_time, tree_time
+                // );
+                println!("gen time: {:<5?}", tree_time);
 
                 channel.send(ServerChunkMsg::ChunkGenerated(GeneratedChunk {
                     pos,
                     data: tree,
-                    mesh,
+                    mesh: ChunkMesh {},
                 }));
             }
             ChunkLoaderMsg::Exit => {
@@ -168,7 +169,9 @@ fn generate(pos: ChunkPos) -> Array3<u32> {
     .with_seed(0)
     .with_freq(0.005)
     .generate();
-    Array3::from_shape_fn(shape, |(x, y, z)| generate_at(Vector3::new(x, y, z), posf, &noise))
+    Array3::from_shape_fn(shape, |(x, y, z)| {
+        generate_at(Vector3::new(x, y, z), posf, &noise)
+    })
 }
 
 fn generate_tree(pos: ChunkPos) -> OctTree {
@@ -179,24 +182,24 @@ fn generate_tree(pos: ChunkPos) -> OctTree {
     let (noise, ..) =
         NoiseBuilder::gradient_2d_offset(posf.x, chunk::SIDE_LENGTH, posf.z, chunk::SIDE_LENGTH)
             .with_seed(0)
-            .with_freq(0.005)
+            .with_freq(0.01 / (chunk::SIDE_POW as f32))
             .generate();
-    OctTree::from_fn_rec(&mut |p| generate_at(p, posf, &noise), 8)
+    OctTree::from_fn_rec(&mut |p| generate_at(p, posf, &noise), chunk::SIDE_POW)
 }
 
 fn generate_at(p: Vector3<usize>, posf: Vector3<f32>, noise: &[f32]) -> u32 {
     // 0 air 1 stone 2 "sand" 3 water
     let y = p.y as f32 + posf.y;
-    let (_a, b, c, d) = (0.0, 50.0, 100.0, 127.0);
-    let n = (noise[p.x + p.z * chunk::SIDE_LENGTH] + 0.022) * (1.0 / 0.044) * d;
-    if y < n.max(b) {
-        if y < b {
+    let [a, b, c] = [0.20, 0.35, 0.5].map(|f| chunk::SIDE_LENGTH as f32 * f);
+    let n = (noise[p.x + p.z * chunk::SIDE_LENGTH] + 0.022) * (1.0 / 0.044) * c;
+    if y < n.max(a) {
+        if y < a {
             if y > n {
                 3
             } else {
                 1
             }
-        } else if y < c {
+        } else if y < b {
             2
         } else {
             1
