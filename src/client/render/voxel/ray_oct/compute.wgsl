@@ -57,6 +57,7 @@ const ZERO3F = vec3<f32>(0.0);
 const ZERO2F = vec2<f32>(0.0);
 const FULL_ALPHA = 0.999;
 const EPSILON = 0.00000000001;
+const MAX_ITERS = 1000;
 
 fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
     let gi = 0;
@@ -85,7 +86,7 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
         (group.transform * vec4<f32>(0.0, dir_if.y, 0.0, 0.0)).xyz,
         (group.transform * vec4<f32>(0.0, 0.0, dir_if.z, 0.0)).xyz,
     );
-    var next_normal = vec3<f32>(0.0, 0.0, 0.0);
+    var axis = 0u;
 
     // find where ray intersects with group
     let pos_min = (vec3<f32>(1.0) - dir_uf) * dim_f;
@@ -94,7 +95,6 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
     // time of intersection; x = td + p, solve for t
     let t_min = (pos_min - pos) / dir;
     let t_max = (pos_max - pos) / dir;
-    var t = 0.0;
     if outside3f(pos, ZERO3F, dim_f) {
         // points of intersection
         let px = pos + t_min.x * dir;
@@ -111,11 +111,12 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
             return vec4<f32>(0.0);
         }
         pos = select(select(pz, py, hit.y), px, hit.x);
-        t = select(select(t_min.z, t_min.y, hit.y), t_min.x, hit.x);
-        next_normal = select(select(normals[2], normals[1], hit.y), normals[0], hit.x);
+        axis = select(select(2u, 1u, hit.y), 0u, hit.x);
     }
-    var vox_pos = clamp(vec3<i32>(pos), vec3<i32>(0), dim_i - vec3<i32>(1));
+    // time to move 1 unit in each direction
     let inc_t = abs(1.0 / dir);
+    let t_offset = max(max(t_min.x, t_min.y), t_min.z);
+    var t = max(0.0, t_offset);
 
     let dir_i = vec3<i32>(dir_if);
     let dir_u = vec3<u32>((dir_i + vec3<i32>(1)) / 2);
@@ -123,70 +124,85 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
     let inv_dir_bits = 7 - dir_bits;
 
     var node_start = 1u;
-    var t_center = (t_max + t_min) / 2.0;
-    var half_t_span = f32(256 / 2) * inc_t;
-    var scale = 0;
-
-    var dir_idx = vec3<u32>(vec3<f32>(t) > t_center);
-    var child = vec_to_dir(dir_idx);
-    var parents = array<u32, 8>();
+    var scale = 7u;
+    var half_t_span = f32(1u << scale) * inc_t;
+    var t_center = t_min + half_t_span;
     var color = vec4<f32>(0.0);
+    var parents = array<u32, 8>();
 
-    for (var safety = 0; safety < 1000; safety += 1) {
+    var child = (u32(t > t_center.x) << 2) + (u32(t > t_center.y) << 1) + u32(t > t_center.z);
+    var child_pos = dir_to_vec(child);
+    var vox_pos = child_pos * (1u << scale);
+
+    var iters = 0;
+    loop {
+        if iters == MAX_ITERS {
+            return vec4<f32>(1.0, 0.0, 1.0, 1.0);
+        }
+        iters += 1;
         let node = voxels[group.offset + node_start + (child ^ inv_dir_bits)];
         if node >= LEAF_BIT {
             let vcolor = get_color(node & LEAF_MASK);
             if vcolor.a > 0.0 {
-                let diffuse = max(dot(global_lights[0].dir, next_normal) + 0.1, 0.0);
+                let diffuse = max(dot(global_lights[0].dir, normals[axis]) + 0.1, 0.0);
                 let ambient = 0.2;
                 let lighting = max(diffuse, ambient);
                 let new_color = min(vcolor.xyz * lighting, vec3<f32>(1.0));
                 color += vec4<f32>(new_color.xyz * vcolor.a, vcolor.a) * (1.0 - color.a);
-                if color.a > FULL_ALPHA { return color; }
+                if color.a > FULL_ALPHA { break; }
             }
 
-            let center_adj = t_center + half_t_span * vec3<f32>(dir_idx);
-            t = min(min(center_adj.x, center_adj.y), center_adj.z);
-            var move_dir = 0u;
-            if t == center_adj.x { move_dir = 4u; next_normal = normals[0]; }
-            if t == center_adj.y { move_dir = 2u; next_normal = normals[1]; }
-            if t == center_adj.z { move_dir = 1u; next_normal = normals[2]; }
-            if move_dir == 0 { return vec4<f32>(1.0); }
-            while (child & move_dir) > 0 {
-                if scale == 0 { return color; }
+            // move to next time point and determine which axis to move along
+            let t_next = t_center + half_t_span * vec3<f32>(child_pos);
+            t = min(min(t_next.x, t_next.y), t_next.z);
+            axis = select(select(0u, 1u, t == t_next.y), 2u, t == t_next.z);
+            let move_dir = 4u >> axis;
 
-                scale -= 1;
+            // check if need to pop stack
+            if (child & move_dir) > 0 {
+                // calculate new scale; first differing bit after adding
+                let new_pos = vox_pos[axis] + (1u << scale);
+                if new_pos == 256 { break; }
+                let differing = vox_pos[axis] ^ new_pos;
+                vox_pos[axis] = new_pos;
+                scale = firstLeadingBit(differing);
+
+                // restore & recalculate parent
                 let parent_info = parents[scale];
                 node_start = parent_info >> 3;
                 child = parent_info & 7;
-
-                dir_idx = dir_to_vec(child);
-                t_center -= half_t_span * (vec3<f32>(dir_idx * 2) - 1.0);
-                half_t_span *= 2.0;
+                let scale_vec = vec3<u32>(scale + 1);
+                vox_pos = (vox_pos >> scale_vec) << scale_vec; // remove lower scale bits
+                half_t_span = f32(1u << scale) * inc_t;
+                t_center = vec3<f32>(vox_pos) * inc_t + t_min + half_t_span;
             }
-            child = child ^ move_dir;
-            dir_idx = dir_to_vec(child);
+            // move to next child and voxel position
+            child ^= move_dir;
+            child_pos = dir_to_vec(child);
+            vox_pos |= child_pos << vec3<u32>(scale);
         } else {
+            // push current node to stack
             parents[scale] = (node_start << 3) + child;
-            scale += 1;
+            scale -= 1u;
 
+            // calculate child node vars
             half_t_span /= 2.0;
-            t_center += half_t_span * (vec3<f32>(dir_idx * 2) - 1.0);
-            dir_idx = vec3<u32>(vec3<f32>(t) > t_center);
-
-            child = vec_to_dir(dir_idx);
+            t_center += half_t_span * (vec3<f32>(child_pos * 2) - 1.0);
+            child_pos = vec3<u32>(vec3<f32>(t) > t_center);
+            child = (child_pos.x << 2) + (child_pos.y << 1) + child_pos.z;
+            vox_pos += child_pos * (1u << scale);
             node_start = node_start + 8 + node;
         }
     }
-    return vec4<f32>(1.0, 0.0, 1.0, 1.0);
+    // return vec4<f32>(f32(iters) / f32(MAX_ITERS), 0.0, 0.0, 1.0);
+    return color;
 }
 
 const LEAF_BIT = 1u << 31u;
 const LEAF_MASK = ~LEAF_BIT;
 
-// no clue if this is efficient, mod is faster for all I know
 fn dir_to_vec(bits: u32) -> vec3<u32> {
-    return vec3<u32>(extractBits(bits, 2u, 1u), extractBits(bits, 1u, 1u), extractBits(bits, 0u, 1u));
+    return vec3<u32>(bits >> 2, (bits & 2) >> 1, bits & 1);
 }
 
 fn vec_to_dir(vec: vec3<u32>) -> u32 {
