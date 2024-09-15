@@ -15,29 +15,28 @@ struct GlobalLight {
 
 struct View {
     transform: mat4x4<f32>,
-    width: u32,
-    height: u32,
     zoom: f32,
 };
 
 struct VoxelGroup {
     transform: mat4x4<f32>,
     transform_inv: mat4x4<f32>,
-    dimensions: vec3<u32>,
+    scale: u32,
     offset: u32,
 };
 
 @compute
 @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) cell: vec3<u32>) {
+    let view_dim = textureDimensions(output);
     // get position of the pixel; eye at origin, pixel on plane z = 1
-    if cell.x >= view.width || cell.y >= view.height {
+    if cell.x >= view_dim.x || cell.y >= view_dim.y {
         return;
     }
-    let win_dim = vec2<f32>(f32(view.width), f32(view.height));
-    let aspect = win_dim.y / win_dim.x;
+    let view_dim_f = vec2<f32>(view_dim);
+    let aspect = view_dim_f.y / view_dim_f.x;
     let pixel_pos = vec3<f32>(
-        (vec2<f32>(cell.xy) / win_dim - vec2<f32>(0.5)) * vec2<f32>(2.0, -2.0 * aspect),
+        (vec2<f32>(cell.xy) / view_dim_f - vec2<f32>(0.5)) * vec2<f32>(2.0, -2.0 * aspect),
         view.zoom
     );
     let pos = view.transform * vec4<f32>(pixel_pos, 1.0);
@@ -58,18 +57,17 @@ const ZERO2F = vec2<f32>(0.0);
 const FULL_ALPHA = 0.999;
 const EPSILON = 0.00000000001;
 const MAX_ITERS = 1000;
-
-const MAX_DEPTH: u32 = 10;
-const MAX_LENGTH: u32 = (1u << MAX_DEPTH);
+const MAX_SCALE: u32 = 10;
 
 fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
     let gi = 0;
     let group = voxel_groups[gi];
-    if group.dimensions.x == 0 {
+    if group.scale == 0 {
         return vec4<f32>(0.0);
     }
-    let dim_f = vec3<f32>(group.dimensions);
-    let dim_i = vec3<i32>(group.dimensions);
+    let dimensions = vec3<u32>(1u << group.scale);
+    let dim_f = vec3<f32>(dimensions);
+    let dim_i = vec3<i32>(dimensions);
 
     // transform so that group is at 0,0
     let pos_start = (group.transform_inv * pos_view).xyz;
@@ -127,11 +125,11 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
     let inv_dir_bits = 7 - dir_bits;
 
     var node_start = 1u;
-    var scale = MAX_DEPTH - 1;
+    var scale = group.scale - 1;
     var half_t_span = f32(1u << scale) * inc_t;
     var t_center = t_min + half_t_span;
     var color = vec4<f32>(0.0);
-    var parents = array<u32, MAX_DEPTH>();
+    var parents = array<u32, MAX_SCALE>();
 
     var child = (u32(t > t_center.x) << 2) + (u32(t > t_center.y) << 1) + u32(t > t_center.z);
     var child_pos = dir_to_vec(child);
@@ -145,8 +143,8 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
         iters += 1;
         let node = voxels[group.offset + node_start + (child ^ inv_dir_bits)];
         if node >= LEAF_BIT {
-            let vcolor = get_color(node & LEAF_MASK);
-            if vcolor.a > 0.0 {
+            if node != LEAF_BIT {
+                let vcolor = get_color(node & LEAF_MASK);
                 let diffuse = max(dot(global_lights[0].dir, normals[axis]) + 0.1, 0.0);
                 let ambient = 0.2;
                 let lighting = max(diffuse, ambient);
@@ -164,11 +162,10 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
             // check if need to pop stack
             if (child & move_dir) > 0 {
                 // calculate new scale; first differing bit after adding
-                let new_pos = vox_pos[axis] + (1u << scale);
-                if new_pos == MAX_LENGTH { break; }
-                let differing = vox_pos[axis] ^ new_pos;
-                vox_pos[axis] = new_pos;
+                let axis_pos = vox_pos[axis];
+                let differing = axis_pos ^ (axis_pos + (1u << scale));
                 scale = firstLeadingBit(differing);
+                if scale == group.scale { break; }
 
                 // restore & recalculate parent
                 let parent_info = parents[scale];
@@ -194,7 +191,7 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
             child_pos = vec3<u32>(vec3<f32>(t) > t_center);
             child = (child_pos.x << 2) + (child_pos.y << 1) + child_pos.z;
             vox_pos += child_pos * (1u << scale);
-            node_start = node_start + 8 + node;
+            node_start += 8 + node;
         }
     }
     // return vec4<f32>(f32(iters) / f32(MAX_ITERS), 0.0, 0.0, 1.0);

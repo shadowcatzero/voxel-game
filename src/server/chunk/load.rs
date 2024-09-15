@@ -160,7 +160,7 @@ fn generate(pos: ChunkPos) -> Array3<u32> {
         return Array3::from_elem(shape, 0);
     }
     let posf: Vector3<f32> = (pos.cast() * chunk::SIDE_LENGTH as f32) - Vector3::from_element(1.0);
-    let (noise, ..) = NoiseBuilder::gradient_2d_offset(
+    let (noise, min, max) = NoiseBuilder::gradient_2d_offset(
         posf.x,
         chunk::SIDE_LENGTH + 2,
         posf.z,
@@ -170,7 +170,7 @@ fn generate(pos: ChunkPos) -> Array3<u32> {
     .with_freq(0.005)
     .generate();
     Array3::from_shape_fn(shape, |(x, y, z)| {
-        generate_at(Vector3::new(x, y, z), posf, &noise)
+        generate_at(Vector3::new(x, y, z), posf, &noise, min, max)
     })
 }
 
@@ -179,31 +179,29 @@ fn generate_tree(pos: ChunkPos) -> OctTree {
         return OctTree::from_leaf(0, 8);
     }
     let posf: Vector3<f32> = pos.cast() * chunk::SIDE_LENGTH as f32;
-    let (noise, ..) =
+    let (noise, min, max) =
         NoiseBuilder::gradient_2d_offset(posf.x, chunk::SIDE_LENGTH, posf.z, chunk::SIDE_LENGTH)
             .with_seed(0)
-            .with_freq(0.01 / (chunk::SIDE_POW as f32))
+            .with_freq(1.0 / (chunk::SIDE_LENGTH as f32))
             .generate();
-    OctTree::from_fn_rec(&mut |p| generate_at(p, posf, &noise), chunk::SIDE_POW)
+    OctTree::from_fn_rec(&mut |p| generate_at(p, posf, &noise, min, max), chunk::SCALE)
 }
 
-fn generate_at(p: Vector3<usize>, posf: Vector3<f32>, noise: &[f32]) -> u32 {
+fn generate_at(p: Vector3<usize>, posf: Vector3<f32>, noise: &[f32], min: f32, max: f32) -> u32 {
     // 0 air 1 stone 2 "sand" 3 water
     let y = p.y as f32 + posf.y;
-    let [a, b, c] = [0.20, 0.35, 0.5].map(|f| chunk::SIDE_LENGTH as f32 * f);
-    let n = (noise[p.x + p.z * chunk::SIDE_LENGTH] + 0.022) * (1.0 / 0.044) * c;
-    if y < n.max(a) {
+    let [a, b, c] = [0.18, 0.35, 0.5].map(|f| chunk::SIDE_LENGTH as f32 * f);
+    let n = ((noise[p.x + p.z * chunk::SIDE_LENGTH] - min) / (max - min) * 2.0).exp2() * c * 0.25;
+    if y < n {
         if y < a {
-            if y > n {
-                3
-            } else {
-                1
-            }
+            1
         } else if y < b {
             2
         } else {
             1
         }
+    } else if y < a {
+        3
     } else {
         0
     }

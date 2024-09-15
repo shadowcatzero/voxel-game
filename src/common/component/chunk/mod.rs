@@ -8,8 +8,8 @@ use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::{bundle::Bundle, component::Component, entity::Entity, system::Resource};
 use nalgebra::Vector3;
 
-pub const SIDE_POW: u32 = 10;
-pub const SIDE_LENGTH: usize = 2usize.pow(SIDE_POW);
+pub const SCALE: u32 = 8;
+pub const SIDE_LENGTH: usize = 2usize.pow(SCALE);
 pub const SHAPE: (usize, usize, usize) = (SIDE_LENGTH, SIDE_LENGTH, SIDE_LENGTH);
 pub const DIMENSIONS: Vector3<usize> = Vector3::new(SIDE_LENGTH, SIDE_LENGTH, SIDE_LENGTH);
 pub const LEN: usize = SHAPE.0 * SHAPE.1 * SHAPE.2;
@@ -26,7 +26,7 @@ impl ChunkData {
     }
     pub fn empty() -> Self {
         Self {
-            data: OctTree::from_leaf(0, SIDE_POW),
+            data: OctTree::from_leaf(0, SCALE),
         }
     }
 }

@@ -31,7 +31,7 @@ impl Layout {
             "global lights",
             3,
             &[GlobalLight {
-                direction: Vector3::new(-1.0, -2.0, 2.0).normalize(),
+                direction: Vector3::new(-1.0, -2.3, 2.0).normalize(),
             }],
         );
         let texture = StorageTexture::init(
@@ -48,10 +48,9 @@ impl Layout {
         let render_bind_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[
-                    view.bind_group_layout_entry(),
                     wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::VERTEX,
                         ty: wgpu::BindingType::Texture {
                             multisampled: false,
                             view_dimension: wgpu::TextureViewDimension::D2,
@@ -60,7 +59,7 @@ impl Layout {
                         count: None,
                     },
                     wgpu::BindGroupLayoutEntry {
-                        binding: 2,
+                        binding: 1,
                         visibility: wgpu::ShaderStages::FRAGMENT,
                         // This should match the filterable field of the
                         // corresponding Texture entry above.
@@ -106,23 +105,24 @@ impl Layout {
             format: config.format,
         }
     }
+
     pub fn render_bind_group(&self, device: &wgpu::Device) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &self.render_bind_layout,
             entries: &[
-                self.view.bind_group_entry(),
                 wgpu::BindGroupEntry {
-                    binding: 1,
+                    binding: 0,
                     resource: wgpu::BindingResource::TextureView(&self.texture.view),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 2,
+                    binding: 1,
                     resource: wgpu::BindingResource::Sampler(&self.texture.sampler),
                 },
             ],
             label: Some("tile_bind_group"),
         })
     }
+
     pub fn compute_bind_group(&self, device: &wgpu::Device) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &self.compute_bind_layout,
@@ -136,6 +136,7 @@ impl Layout {
             label: Some("voxel compute"),
         })
     }
+
     pub fn render_pipeline(
         &self,
         device: &wgpu::Device,
@@ -179,6 +180,7 @@ impl Layout {
             cache: None,
         })
     }
+
     pub fn compute_pipeline(
         &self,
         device: &wgpu::Device,

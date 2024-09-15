@@ -5,7 +5,7 @@ use nalgebra::{Projective3, Vector3};
 pub struct VoxelGroup {
     pub transform: Projective3<f32>,
     pub transform_inv: Projective3<f32>,
-    pub dimensions: Vector3<u32>,
+    pub scale: u32,
     pub offset: u32,
 }
 

@@ -19,7 +19,7 @@ use crate::{
 use bevy_ecs::entity::Entity;
 pub use color::*;
 use layout::Layout;
-use nalgebra::{Projective3, Transform3, Translation3, Vector2};
+use nalgebra::{Projective3, Transform3, Translation3, Vector2, Vector3};
 use std::{collections::HashMap, ops::Deref};
 use wgpu::include_wgsl;
 use {group::VoxelGroup, view::View};
@@ -33,8 +33,8 @@ pub struct VoxelPipeline {
     id_map: HashMap<Entity, (usize, VoxelGroup)>,
 }
 
-const RENDER_SHADER: wgpu::ShaderModuleDescriptor<'_> = include_wgsl!("render.wgsl");
-const COMPUTE_SHADER: wgpu::ShaderModuleDescriptor<'_> = include_wgsl!("compute.wgsl");
+const RENDER_SHADER: wgpu::ShaderModuleDescriptor<'_> = include_wgsl!("shader/render.wgsl");
+const COMPUTE_SHADER: wgpu::ShaderModuleDescriptor<'_> = include_wgsl!("shader/compute.wgsl");
 
 impl VoxelPipeline {
     pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
@@ -82,7 +82,7 @@ impl VoxelPipeline {
 
     pub fn update_shader(&mut self, device: &wgpu::Device) {
         let Ok(shader) = std::fs::read_to_string(
-            env!("CARGO_MANIFEST_DIR").to_owned() + "/src/client/render/voxel/ray_oct/compute.wgsl",
+            env!("CARGO_MANIFEST_DIR").to_owned() + "/src/client/render/voxel/ray_oct/shader/compute.wgsl",
         ) else {
             println!("Failed to reload shader!");
             return;
@@ -125,7 +125,7 @@ impl VoxelPipeline {
         let group = VoxelGroup {
             transform: proj,
             transform_inv: proj.inverse(),
-            dimensions: chunk::DIMENSIONS.cast(),
+            scale: chunk::SCALE,
             offset: offset as u32,
         };
         let updates = [ArrBufUpdate {
@@ -166,10 +166,11 @@ impl VoxelPipeline {
         update: UpdateGridTransform,
     ) {
         if let Some((i, group)) = self.id_map.get_mut(&update.id) {
+            let offset = Vector3::from_element(-(2u32.pow(group.scale) as f32) / 2.0);
             let proj = Projective3::identity()
                 * Translation3::from(update.pos)
                 * update.orientation
-                * Translation3::from(-group.dimensions.cast() / 2.0);
+                * Translation3::from(offset);
             group.transform = proj;
             group.transform_inv = proj.inverse();
             let updates = [ArrBufUpdate {
@@ -194,8 +195,6 @@ impl VoxelPipeline {
         let transform =
             Transform3::identity() * Translation3::from(camera.pos) * camera.orientation;
         let data = View {
-            width: size.x,
-            height: size.y,
             zoom: camera.scale,
             transform,
         };
