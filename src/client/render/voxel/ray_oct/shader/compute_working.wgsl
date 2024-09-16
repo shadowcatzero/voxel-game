@@ -57,7 +57,7 @@ const ZERO2F = vec2<f32>(0.0);
 const FULL_ALPHA = 0.999;
 const EPSILON = 0.00000000001;
 const MAX_ITERS = 1000;
-const MAX_SCALE: u32 = 12;
+const MAX_SCALE: u32 = 10;
 
 fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
     let gi = 0;
@@ -91,9 +91,11 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
 
     // find where ray intersects with group
     let pos_min = (vec3<f32>(1.0) - dir_uf) * dim_f;
+    let pos_max = dir_uf * dim_f;
     var pos = pos_start;
     // time of intersection; x = td + p, solve for t
-    var t_min = (pos_min - pos) / dir;
+    let t_min = (pos_min - pos) / dir;
+    let t_max = (pos_max - pos) / dir;
     if outside3f(pos, ZERO3F, dim_f) {
         // points of intersection
         let px = pos + t_min.x * dir;
@@ -112,10 +114,8 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
         pos = select(select(pz, py, hit.y), px, hit.x);
         axis = select(select(2u, 1u, hit.y), 0u, hit.x);
     }
-    t_min *= f32(1u << (MAX_SCALE - group.scale));
     // time to move 1 unit in each direction
-    let full = f32(1u << MAX_SCALE);
-    let inc_t = abs(1.0 / dir) * full;
+    let inc_t = abs(1.0 / dir);
     let t_offset = max(max(t_min.x, t_min.y), t_min.z);
     var t = max(0.0, t_offset);
 
@@ -125,18 +125,15 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
     let inv_dir_bits = 7 - dir_bits;
 
     var node_start = 1u;
-    var scale = MAX_SCALE - 1;
-    var scale_exp2 = 0.5;
+    var scale = group.scale - 1;
+    var half_t_span = f32(1u << scale) * inc_t;
+    var t_center = t_min + half_t_span;
     var color = vec4<f32>(0.0);
     var parents = array<u32, MAX_SCALE>();
 
-    var child = 0u;
-    var vox_pos = vec3<f32>(1.0);
-    let t_center = t_min + scale_exp2 * inc_t;
-    if t > t_center.x { vox_pos.x = 1.5; child |= 4u; }
-    if t > t_center.y { vox_pos.y = 1.5; child |= 2u; }
-    if t > t_center.z { vox_pos.z = 1.5; child |= 1u; }
-    let min_adj = t_min - inc_t;
+    var child = (u32(t > t_center.x) << 2) + (u32(t > t_center.y) << 1) + u32(t > t_center.z);
+    var child_pos = dir_to_vec(child);
+    var vox_pos = child_pos * (1u << scale);
 
     var iters = 0;
     loop {
@@ -144,7 +141,6 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
             return vec4<f32>(1.0, 0.0, 1.0, 1.0);
         }
         iters += 1;
-        let t_corner = vox_pos * inc_t + min_adj;
         let node = voxels[group.offset + node_start + (child ^ inv_dir_bits)];
         if node >= LEAF_BIT {
             if node != LEAF_BIT {
@@ -158,7 +154,7 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
             }
 
             // move to next time point and determine which axis to move along
-            let t_next = t_corner + scale_exp2 * inc_t;
+            let t_next = t_center + half_t_span * vec3<f32>(child_pos);
             t = min(min(t_next.x, t_next.y), t_next.z);
             axis = select(select(0u, 1u, t == t_next.y), 2u, t == t_next.z);
             let move_dir = 4u >> axis;
@@ -167,35 +163,35 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
             if (child & move_dir) > 0 {
                 // calculate new scale; first differing bit after adding
                 let axis_pos = vox_pos[axis];
-                // AWARE
-                let differing = bitcast<u32>(axis_pos) ^ bitcast<u32>(axis_pos + scale_exp2);
-                scale = (bitcast<u32>(f32(differing)) >> 23) - 127 - (23 - MAX_SCALE);
-                scale_exp2 = bitcast<f32>((scale + 127 - MAX_SCALE) << 23);
-                if scale >= MAX_SCALE { break; }
+                let differing = axis_pos ^ (axis_pos + (1u << scale));
+                scale = firstLeadingBit(differing);
+                if scale == group.scale { break; }
 
                 // restore & recalculate parent
                 let parent_info = parents[scale];
                 node_start = parent_info >> 3;
                 child = parent_info & 7;
-                let scale_vec = vec3<u32>(scale + 23 - MAX_SCALE);
-                // remove bits lower than current scale
-                vox_pos = bitcast<vec3<f32>>((bitcast<vec3<u32>>(vox_pos) >> scale_vec) << scale_vec);
+                let scale_vec = vec3<u32>(scale + 1);
+                vox_pos = (vox_pos >> scale_vec) << scale_vec; // remove lower scale bits
+                half_t_span = f32(1u << scale) * inc_t;
+                t_center = vec3<f32>(vox_pos) * inc_t + t_min + half_t_span;
             }
             // move to next child and voxel position
-            child += move_dir;
-            vox_pos[axis] += scale_exp2;
+            child ^= move_dir;
+            child_pos = dir_to_vec(child);
+            vox_pos |= child_pos << vec3<u32>(scale);
+            // vox_pos[axis] += (1u << scale);
         } else {
             // push current node to stack
             parents[scale] = (node_start << 3) + child;
             scale -= 1u;
 
             // calculate child node vars
-            scale_exp2 *= 0.5;
-            child = 0u;
-            let t_center = t_corner + scale_exp2 * inc_t;
-            if t > t_center.x { vox_pos.x += scale_exp2; child |= 4u; }
-            if t > t_center.y { vox_pos.y += scale_exp2; child |= 2u; }
-            if t > t_center.z { vox_pos.z += scale_exp2; child |= 1u; }
+            half_t_span /= 2.0;
+            t_center += half_t_span * (vec3<f32>(child_pos * 2) - 1.0);
+            child_pos = vec3<u32>(vec3<f32>(t) > t_center);
+            child = (child_pos.x << 2) + (child_pos.y << 1) + child_pos.z;
+            vox_pos += child_pos * (1u << scale);
             node_start += 8 + node;
         }
     }

@@ -190,17 +190,18 @@ fn generate_tree(pos: ChunkPos) -> OctTree {
 fn generate_at(p: Vector3<usize>, posf: Vector3<f32>, noise: &[f32], min: f32, max: f32) -> u32 {
     // 0 air 1 stone 2 "sand" 3 water
     let y = p.y as f32 + posf.y;
-    let [a, b, c] = [0.18, 0.35, 0.5].map(|f| chunk::SIDE_LENGTH as f32 * f);
-    let n = ((noise[p.x + p.z * chunk::SIDE_LENGTH] - min) / (max - min) * 2.0).exp2() * c * 0.25;
+    // highest heights, 0.0 .. 1.0 relative to chunk size
+    let [water, grass, top] = [0.18, 0.35, 0.5].map(|f| chunk::SIDE_LENGTH as f32 * f);
+    let n = ((noise[p.x + p.z * chunk::SIDE_LENGTH] - min) / (max - min) * 2.0).exp2() * top * 0.25;
     if y < n {
-        if y < a {
+        if y < water {
             1
-        } else if y < b {
+        } else if y < grass {
             2
         } else {
             1
         }
-    } else if y < a {
+    } else if y <= water {
         3
     } else {
         0

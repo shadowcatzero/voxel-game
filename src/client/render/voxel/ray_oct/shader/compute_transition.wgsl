@@ -57,7 +57,7 @@ const ZERO2F = vec2<f32>(0.0);
 const FULL_ALPHA = 0.999;
 const EPSILON = 0.00000000001;
 const MAX_ITERS = 1000;
-const MAX_SCALE: u32 = 12;
+const MAX_SCALE: u32 = 10;
 
 fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
     let gi = 0;
@@ -131,12 +131,11 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
     var parents = array<u32, MAX_SCALE>();
 
     var child = 0u;
-    var vox_pos = vec3<f32>(1.0);
+    var vox_pos = vec3<f32>(0.0);
     let t_center = t_min + scale_exp2 * inc_t;
-    if t > t_center.x { vox_pos.x = 1.5; child |= 4u; }
-    if t > t_center.y { vox_pos.y = 1.5; child |= 2u; }
-    if t > t_center.z { vox_pos.z = 1.5; child |= 1u; }
-    let min_adj = t_min - inc_t;
+    if t > t_center.x { vox_pos.x = 0.5; child |= 4u; }
+    if t > t_center.y { vox_pos.y = 0.5; child |= 2u; }
+    if t > t_center.z { vox_pos.z = 0.5; child |= 1u; }
 
     var iters = 0;
     loop {
@@ -144,7 +143,7 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
             return vec4<f32>(1.0, 0.0, 1.0, 1.0);
         }
         iters += 1;
-        let t_corner = vox_pos * inc_t + min_adj;
+        let t_corner = vox_pos * inc_t + t_min;
         let node = voxels[group.offset + node_start + (child ^ inv_dir_bits)];
         if node >= LEAF_BIT {
             if node != LEAF_BIT {
@@ -166,23 +165,22 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
             // check if need to pop stack
             if (child & move_dir) > 0 {
                 // calculate new scale; first differing bit after adding
-                let axis_pos = vox_pos[axis];
-                // AWARE
-                let differing = bitcast<u32>(axis_pos) ^ bitcast<u32>(axis_pos + scale_exp2);
-                scale = (bitcast<u32>(f32(differing)) >> 23) - 127 - (23 - MAX_SCALE);
-                scale_exp2 = bitcast<f32>((scale + 127 - MAX_SCALE) << 23);
-                if scale >= MAX_SCALE { break; }
+                let axis_pos = u32(vox_pos[axis] * full);
+                let differing = axis_pos ^ (axis_pos + u32(scale_exp2 * full));
+                scale = u32(firstLeadingBit(differing));
+                if scale == MAX_SCALE { break; }
 
                 // restore & recalculate parent
                 let parent_info = parents[scale];
                 node_start = parent_info >> 3;
                 child = parent_info & 7;
-                let scale_vec = vec3<u32>(scale + 23 - MAX_SCALE);
-                // remove bits lower than current scale
-                vox_pos = bitcast<vec3<f32>>((bitcast<vec3<u32>>(vox_pos) >> scale_vec) << scale_vec);
+                let scale_vec = vec3<u32>(scale);
+                // remove lower scale bits
+                vox_pos = vec3<f32>((vec3<i32>(vox_pos * full) >> scale_vec) << scale_vec) / full;
+                scale_exp2 = 1.0 / f32(1u << (MAX_SCALE - scale));
             }
             // move to next child and voxel position
-            child += move_dir;
+            child ^= move_dir;
             vox_pos[axis] += scale_exp2;
         } else {
             // push current node to stack
