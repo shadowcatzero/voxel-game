@@ -8,7 +8,7 @@ use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::{bundle::Bundle, component::Component, entity::Entity, system::Resource};
 use nalgebra::Vector3;
 
-pub const SCALE: u32 = 10;
+pub const SCALE: u32 = 8;
 pub const SIDE_LENGTH: usize = 2usize.pow(SCALE);
 pub const SHAPE: (usize, usize, usize) = (SIDE_LENGTH, SIDE_LENGTH, SIDE_LENGTH);
 pub const DIMENSIONS: Vector3<usize> = Vector3::new(SIDE_LENGTH, SIDE_LENGTH, SIDE_LENGTH);
