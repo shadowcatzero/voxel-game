@@ -134,7 +134,7 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
     var color = vec4<f32>(0.0);
     var parents = array<u32, MAX_SCALE>();
     var prev = LEAF_BIT;
-    var old_t = t;
+    var old_t = t / t_mult;
 
     var child = 0u;
     var vox_pos = vec3<f32>(1.0);
@@ -155,14 +155,18 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
         if node >= LEAF_BIT {
             if node != prev {
                 if node != LEAF_BIT {
-                    let dist = (t - old_t) / t_mult;
-                    old_t = t;
+                    let real_t = t / t_mult;
+                    let dist = real_t - old_t;
+                    old_t = real_t;
                     let filt = min(dist / 64.0, 1.0);
                     if prev == LEAF_BIT + 3 {
                         color.a += filt * (1.0 - color.a);
                         if color.a > FULL_ALPHA { break; }
                     }
-                    let pos = (vox_pos - 1.5) * (dir_if) + 0.5 - scale_exp2 * (1.0 - dir_uf);
+                    var pos = (pos_view + dir_view * real_t).xyz;
+                    pos[axis] = round(pos[axis]) - (1.0 - dir_uf[axis]);
+                    // if true {return vec4<f32>(floor(pos) / 16.0, 1.0);}
+                    // let pos = (vox_pos - 1.5) * (dir_if) + 0.5 - scale_exp2 * (1.0 - dir_uf);
                     // let pos = t / t_mult;
                     // if true {return vec4<f32>(pos, 1.0);}
                     let vcolor = get_color(node & LEAF_MASK, pos);
@@ -233,8 +237,8 @@ fn vec_to_dir(vec: vec3<u32>) -> u32 {
 }
 
 fn get_color(id: u32, pos: vec3<f32>) -> vec4<f32> {
-    let random = random(pos);
-    let random2 = random(pos + vec3<f32>(0.0001));
+    let random = random(floor(pos));
+    let random2 = random(floor(pos) + vec3<f32>(0.0001));
     switch id {
         case 0u: {
             return vec4<f32>(0.0);
