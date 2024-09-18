@@ -152,7 +152,7 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
         let t_corner = vox_pos * inc_t + min_adj;
         let node = voxels[group.offset + node_start + (child ^ inv_dir_bits)];
         if node >= LEAF_BIT {
-            if node != skip {
+            if node != skip && node != LEAF_BIT {
                 skip = node;
                 let normal = normals[axis];
                 let sun_dir = global_lights[0].dir;
@@ -310,7 +310,7 @@ fn trace_light(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
         let t_corner = vox_pos * inc_t + min_adj;
         let node = voxels[group.offset + node_start + (child ^ inv_dir_bits)];
         if node >= LEAF_BIT {
-            if node != skip {
+            if node != skip && node != LEAF_BIT {
                 skip = node;
                 if data == 3 {
                     let dist = (t - old_t) / t_mult;

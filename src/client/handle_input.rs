@@ -47,9 +47,9 @@ impl Client<'_> {
         }
         if self.keep_cursor {
             let size = window.inner_size();
-            window
-                .set_cursor_position(PhysicalPosition::new(size.width / 2, size.height / 2))
-                .expect("cursor move");
+            // window
+            //     .set_cursor_position(PhysicalPosition::new(size.width / 2, size.height / 2))
+            //     .expect("cursor move");
         }
 
         // camera orientation

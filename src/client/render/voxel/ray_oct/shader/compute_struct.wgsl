@@ -54,12 +54,14 @@ fn main(@builtin(global_invocation_id) cell: vec3<u32>) {
         )) - 1.0);
         while res.data != 0 {
             let data = res.data & LEAF_MASK;
-            let vcolor = get_color(data);
-            let diffuse = max(dot(global_lights[0].dir, normals[res.ray.axis]) + 0.1, 0.0);
-            let light = max(diffuse, ambient);
-            let new_color = min(vcolor.xyz * light, vec3<f32>(1.0));
-            color += vec4<f32>(new_color.xyz * vcolor.a, vcolor.a) * (1.0 - color.a);
-            if color.a > FULL_ALPHA { break; }
+            if data != 0 {
+                let vcolor = get_color(data);
+                let diffuse = max(dot(global_lights[0].dir, normals[res.ray.axis]) + 0.1, 0.0);
+                let light = max(diffuse, ambient);
+                let new_color = min(vcolor.xyz * light, vec3<f32>(1.0));
+                color += vec4<f32>(new_color.xyz * vcolor.a, vcolor.a) * (1.0 - color.a);
+                if color.a > FULL_ALPHA { break; }
+            }
             let old_t = res.ray.t;
             res = ray_next(res.ray, res.data);
             if data == 3 {
@@ -76,9 +78,11 @@ fn main(@builtin(global_invocation_id) cell: vec3<u32>) {
             var light = 1.0;
             while res.data != 0 {
                 let data = res.data & LEAF_MASK;
-                let vcolor = get_color(data);
-                if data != 3 { light -= vcolor.a * light; }
-                if light <= 0 { break; }
+                if data != 0 {
+                    let vcolor = get_color(data);
+                    if data != 3 { light -= vcolor.a * light; }
+                    if light <= 0 { break; }
+                }
                 let old_t = res.ray.t;
                 res = ray_next(res.ray, res.data);
                 if data == 3 {
