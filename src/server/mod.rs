@@ -3,6 +3,7 @@ mod client;
 mod rsc;
 mod system;
 mod test;
+mod generation;
 
 pub use client::*;
 

@@ -4,7 +4,7 @@ pub mod voxel;
 pub use command::*;
 
 use super::camera::Camera;
-use crate::client::rsc::CLEAR_COLOR;
+use crate::{client::rsc::CLEAR_COLOR, util::timer::Timer};
 use nalgebra::Vector2;
 use util::DepthTexture;
 use voxel::VoxelPipeline;
@@ -114,6 +114,7 @@ impl<'a> Renderer<'a> {
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
+
         let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: None,
             timestamp_writes: None,

@@ -17,8 +17,8 @@ pub use state::*;
 use system::render::add_grid;
 
 use crate::{
-    server::Server,
     common::{ClientMessage, ServerHandle, ServerMessage},
+    server::Server,
 };
 
 use self::{input::Input, render::Renderer, ClientState};
@@ -46,8 +46,9 @@ pub struct Client<'a> {
     server: ServerHandle,
     server_id_map: HashMap<Entity, Entity>,
     systems: ClientSystems,
-    target: Instant,
+    frame_target: Instant,
     frame_time: Duration,
+    second_target: Instant,
     the_thing: bool,
 }
 
@@ -91,8 +92,9 @@ impl Client<'_> {
             world,
             server,
             server_id_map: HashMap::new(),
-            target: Instant::now(),
+            frame_target: Instant::now(),
             frame_time: FRAME_TIME,
+            second_target: Instant::now(),
             the_thing: false,
         }
     }
@@ -124,13 +126,24 @@ impl Client<'_> {
             }
         }
 
-        if now >= self.target {
-            self.target += self.frame_time;
+        if now >= self.frame_target {
+            self.frame_target += self.frame_time;
             let mut commands = std::mem::take(&mut self.render_commands);
             let world_cmds = std::mem::take(&mut self.world.resource_mut::<RenderCommands>().0);
             commands.extend(world_cmds);
             self.renderer.handle_commands(commands);
             self.renderer.draw();
+        }
+
+        if now >= self.second_target {
+            self.second_target += Duration::from_secs(1);
+            // let timer = self.renderer.timer();
+            // println!(
+            //     "avg: {:4?}; max: {:4?}; fps: {:4?}",
+            //     timer.avg(),
+            //     timer.max(),
+            //     timer.per_sec(),
+            // );
         }
 
         if self.exit {
