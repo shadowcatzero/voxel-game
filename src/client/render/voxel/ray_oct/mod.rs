@@ -34,7 +34,7 @@ pub struct VoxelPipeline {
 }
 
 const RENDER_SHADER: wgpu::ShaderModuleDescriptor<'_> = include_wgsl!("shader/render.wgsl");
-const COMPUTE_SHADER: wgpu::ShaderModuleDescriptor<'_> = include_wgsl!("shader/compute_working.wgsl");
+const COMPUTE_SHADER: wgpu::ShaderModuleDescriptor<'_> = include_wgsl!("shader/compute.wgsl");
 
 impl VoxelPipeline {
     pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
@@ -82,7 +82,7 @@ impl VoxelPipeline {
 
     pub fn update_shader(&mut self, device: &wgpu::Device) {
         let Ok(shader) = std::fs::read_to_string(
-            env!("CARGO_MANIFEST_DIR").to_owned() + "/src/client/render/voxel/ray_oct/shader/compute_working.wgsl",
+            env!("CARGO_MANIFEST_DIR").to_owned() + "/src/client/render/voxel/ray_oct/shader/compute.wgsl",
         ) else {
             println!("Failed to reload shader!");
             return;

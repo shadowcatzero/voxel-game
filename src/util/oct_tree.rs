@@ -1,13 +1,14 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, hash::Hash};
 
 use nalgebra::Vector3;
 use ndarray::ArrayView3;
+use rustc_hash::FxHashMap;
 
 const LEAF_BIT: u32 = 1 << 31;
 const DATA_OFFSET: usize = 8;
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct OctNode(u32);
 impl OctNode {
     pub const fn new_node(addr: u32) -> Self {
@@ -30,9 +31,12 @@ impl OctNode {
     }
 }
 
+type OctNodeMap = FxHashMap<[OctNode; 8], OctNode>;
+
 #[derive(Debug, Clone)]
 pub struct OctTree {
     data: Vec<OctNode>,
+    map: OctNodeMap,
     levels: u32,
     side_length: usize,
 }
@@ -52,6 +56,7 @@ impl OctTree {
     pub fn from_leaf(val: u32, levels: u32) -> Self {
         Self {
             data: vec![OctNode::new_leaf(val)],
+            map: FxHashMap::default(),
             side_length: 2usize.pow(levels),
             levels,
         }
@@ -69,14 +74,17 @@ impl OctTree {
         levels: u32,
         offset: Vector3<usize>,
     ) -> Self {
+        assert!(levels > 0);
         let mut data = Vec::new();
+        let mut map = OctNodeMap::default();
         data.push(OctNode::new_node(0));
-        Self::from_fn_offset_inner(f_leaf, f_node, &mut data, levels, offset);
+        Self::from_fn_offset_inner(f_leaf, f_node, &mut data, levels, offset, &mut map);
         if data.len() == 2 {
             data.remove(0);
         }
         Self {
             data,
+            map,
             side_length: 2usize.pow(levels),
             levels,
         }
@@ -84,97 +92,57 @@ impl OctTree {
     fn from_fn_offset_inner(
         f_leaf: &mut impl FnMut(Vector3<usize>) -> u32,
         f_node: &mut impl FnMut(Vector3<usize>, u32) -> Option<u32>,
-        accumulator: &mut Vec<OctNode>,
+        data: &mut Vec<OctNode>,
         level: u32,
         offset: Vector3<usize>,
+        map: &mut OctNodeMap,
     ) {
-        if level == 0 {
-            accumulator.push(OctNode::new_leaf(f_leaf(offset)));
-            return;
-        } else if level == 1 {
+        if level == 1 {
             let leaves: [OctNode; 8] =
                 core::array::from_fn(|i| OctNode::new_leaf(f_leaf(offset + CORNERS[i])));
             if leaves[1..].iter().all(|l| *l == leaves[0]) {
-                accumulator.push(leaves[0]);
+                data.push(leaves[0]);
+            } else if let Some(node) = map.get(&leaves) {
+                data.push(*node);
             } else {
-                accumulator.extend_from_slice(&leaves);
+                data.extend_from_slice(&leaves);
             }
             return;
         }
-        let i = accumulator.len();
-        accumulator.resize(i + 8, OctNode::new_node(0));
+        let i = data.len();
+        data.resize(i + 8, OctNode::new_node(0));
         let mut data_start = 0;
         for (j, corner_offset) in CORNERS.iter().enumerate() {
             let lvl = level - 1;
             let pos = offset + corner_offset * 2usize.pow(lvl);
-            if let Some(node) = f_node(pos, lvl) {
-                accumulator[i + j] = OctNode::new_leaf(node);
+            if let Some(leaf) = f_node(pos, lvl) {
+                data[i + j] = OctNode::new_leaf(leaf);
             } else {
-                let sub_start = accumulator.len();
-                Self::from_fn_offset_inner(f_leaf, f_node, accumulator, lvl, pos);
-                let len = accumulator.len() - sub_start;
+                let sub_start = data.len();
+                Self::from_fn_offset_inner(f_leaf, f_node, data, lvl, pos, map);
+                let len = data.len() - sub_start;
                 if len == 1 {
-                    accumulator[i + j] = accumulator[sub_start];
-                    accumulator.pop();
+                    data[i + j] = data[sub_start];
+                    data.pop();
                 } else {
-                    accumulator[i + j] = OctNode::new_node(data_start as u32);
+                    let node = OctNode::new_node(sub_start as u32);
+                    data[i + j] = node;
                     data_start += len;
+                    map.insert(data[sub_start..sub_start+8].try_into().unwrap(), node);
                 }
             }
         }
         if data_start == 0 {
-            let first = accumulator[i];
-            if accumulator[i + 1..i + 8].iter().all(|l| *l == first) {
-                accumulator.truncate(i);
-                accumulator.push(first);
+            let first = data[i];
+            if first.is_leaf() && data[i + 1..i + 8].iter().all(|l| *l == first) {
+                data.truncate(i);
+                data.push(first);
+            } else if let Some(node) = map.get(&data[i..i + 8]) {
+                data.truncate(i);
+                data.push(*node);
             }
         }
     }
-
-    pub fn from_fn_iter(f: &mut impl FnMut(Vector3<usize>) -> u32, levels: u32) -> Self {
-        let mut data = vec![OctNode::new_node(0)];
-        let mut level: usize = 1;
-        let mut children = Vec::new();
-        let mut child = vec![0; levels as usize + 1];
-        let pows: Vec<_> = (0..levels).map(|l| 2usize.pow(l)).collect();
-        while level < levels as usize {
-            if child[level] == 8 {
-                let i = children.len() - 8;
-                let first = children[i];
-                if children[i + 1..].iter().all(|l| *l == first) {
-                    children.truncate(i);
-                    children.push(first);
-                } else {
-                    data.extend_from_slice(&children[i..]);
-                    children.truncate(i);
-                    children.push(OctNode::new_node(data.len() as u32 - 8));
-                }
-                child[level] = 0;
-                level += 1;
-                child[level] += 1;
-            } else if level == 1 {
-                let offset: Vector3<usize> = (level..8).map(|l| CORNERS[child[l]] * pows[l]).sum();
-                let leaves: [OctNode; 8] =
-                    core::array::from_fn(|i| OctNode::new_leaf(f(offset + CORNERS[i])));
-                if leaves[1..].iter().all(|l| *l == leaves[0]) {
-                    children.push(leaves[0]);
-                } else {
-                    children.push(OctNode::new_node(data.len() as u32));
-                    data.extend_from_slice(&leaves);
-                }
-                child[level] += 1;
-            } else {
-                level -= 1;
-            }
-        }
-        data[0] = children[0];
-        Self {
-            data,
-            side_length: 2usize.pow(levels),
-            levels,
-        }
-    }
-
     pub fn from_arr(arr: ArrayView3<u32>, levels: u32) -> Self {
         Self::from_fn_rec(&mut |p| arr[(p.x, p.y, p.z)], &mut |_, _| None, levels)
     }

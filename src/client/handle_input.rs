@@ -2,12 +2,9 @@ use std::time::Duration;
 
 use nalgebra::Rotation3;
 use ndarray::Array3;
-use winit::{dpi::PhysicalPosition, keyboard::KeyCode as Key, window::CursorGrabMode};
+use winit::{keyboard::KeyCode as Key, window::CursorGrabMode};
 
-use crate::{
-    common::ServerMessage,
-    common::component::{VoxelGrid, VoxelGridBundle},
-};
+use crate::common::{component::{chunk, VoxelGrid, VoxelGridBundle}, ServerMessage};
 
 use super::{render::voxel::VoxelColor, Client};
 
@@ -28,28 +25,15 @@ impl Client<'_> {
                 window.set_cursor_visible(false);
                 window
                     .set_cursor_grab(CursorGrabMode::Locked)
-                    .map(|_| {
-                        self.keep_cursor = false;
-                    })
-                    .or_else(|_| {
-                        self.keep_cursor = true;
-                        window.set_cursor_grab(CursorGrabMode::Confined)
-                    })
+                    .or_else(|_| window.set_cursor_grab(CursorGrabMode::Confined))
                     .expect("cursor lock");
             } else {
-                self.keep_cursor = false;
                 window.set_cursor_visible(true);
                 window
                     .set_cursor_grab(CursorGrabMode::None)
                     .expect("cursor unlock");
             };
             return;
-        }
-        if self.keep_cursor {
-            let size = window.inner_size();
-            // window
-            //     .set_cursor_position(PhysicalPosition::new(size.width / 2, size.height / 2))
-            //     .expect("cursor move");
         }
 
         // camera orientation
@@ -84,7 +68,7 @@ impl Client<'_> {
         }
 
         // camera position
-        let move_dist = 64.0 * dt;
+        let move_dist = dt * (chunk::SIDE_LENGTH / 16) as f32;
         if input.pressed(Key::KeyW) {
             state.camera.pos += *state.camera.forward() * move_dist;
         }

@@ -41,7 +41,6 @@ pub struct Client<'a> {
     input: Input,
     prev_update: Instant,
     grabbed_cursor: bool,
-    keep_cursor: bool,
     world: World,
     server: ServerHandle,
     server_id_map: HashMap<Entity, Entity>,
@@ -83,7 +82,6 @@ impl Client<'_> {
             input: Input::new(),
             prev_update: Instant::now(),
             grabbed_cursor: false,
-            keep_cursor: false,
             systems: ClientSystems {
                 render_add_grid: world.register_system(add_grid),
                 render_update_transform: world.register_system(system::render::update_transform),
