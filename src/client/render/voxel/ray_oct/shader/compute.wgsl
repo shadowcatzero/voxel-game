@@ -35,12 +35,11 @@ fn main(@builtin(global_invocation_id) cell: vec3<u32>) {
     }
     let view_dim_f = vec2<f32>(view_dim);
     let aspect = view_dim_f.y / view_dim_f.x;
-    let pixel_pos = vec3<f32>(
-        (vec2<f32>(cell.xy) / view_dim_f - vec2<f32>(0.5)) * vec2<f32>(2.0, -2.0 * aspect),
-        view.zoom
+    let pixel_pos = vec2<f32>(
+        (vec2<f32>(cell.xy) / view_dim_f - vec2<f32>(0.5)) * vec2<f32>(2.0, -2.0 * aspect)
     );
-    let pos = view.transform * vec4<f32>(pixel_pos, 1.0);
-    let dir = view.transform * vec4<f32>(normalize(pixel_pos), 0.0);
+    let pos = view.transform * vec4<f32>(pixel_pos, 1.0, 1.0);
+    let dir = view.transform * vec4<f32>(normalize(vec3<f32>(pixel_pos, view.zoom)), 0.0);
 
     var color = trace_full(pos, dir);
     let light_mult = clamp((-dot(dir.xyz, global_lights[0].dir) - 0.99) * 200.0, 0.0, 1.0);
@@ -115,7 +114,7 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
         }
         axis = select(select(2u, 1u, hit.y), 0u, hit.x);
     }
-    let t_mult =f32(1u << (MAX_SCALE - group.scale));
+    let t_mult = f32(1u << (MAX_SCALE - group.scale));
     t_min *= t_mult;
     // time to move 1 unit in each direction
     let full = f32(1u << MAX_SCALE);
@@ -262,7 +261,7 @@ fn get_color(id: u32, pos: vec3<f32>) -> vec4<f32> {
 }
 
 fn random(pos: vec3<f32>) -> f32 {
-    return fract(sin(dot(pos,vec3<f32>(12.9898,78.233,25.1279)))*43758.5453123);
+    return fract(sin(dot(pos, vec3<f32>(12.9898, 78.233, 25.1279))) * 43758.5453123);
 }
 
 fn outside3f(v: vec3<f32>, low: vec3<f32>, high: vec3<f32>) -> bool {

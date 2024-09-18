@@ -62,13 +62,19 @@ impl Client<'_> {
                     * state.camera.orientation;
         }
         state.camera.orientation.renormalize();
+
+        // zoom
         if input.scroll_delta != 0.0 {
-            state.camera_scroll += input.scroll_delta;
-            state.camera.scale = (state.camera_scroll * 0.2).exp();
+            if input.pressed(Key::ControlLeft) {
+                state.camera_scroll += input.scroll_delta;
+                state.camera.scale = (state.camera_scroll * 0.2).exp();
+            } else {
+                state.speed += input.scroll_delta * 0.2;
+            }
         }
 
         // camera position
-        let move_dist = dt * (chunk::SIDE_LENGTH / 16) as f32;
+        let move_dist = dt * state.speed.exp() * (chunk::SIDE_LENGTH / 16) as f32;
         if input.pressed(Key::KeyW) {
             state.camera.pos += *state.camera.forward() * move_dist;
         }
