@@ -62,6 +62,8 @@ const MAX_ITERS = 2000;
 // NOTE: CANNOT GO HIGHER THAN 23 due to how floating point
 // numbers are stored and the bit manipulation used
 const MAX_SCALE: u32 = 13;
+const AMBIENT: f32 = 0.2;
+const SPECULAR: f32 = 0.5;
 
 fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
     let gi = 0;
@@ -169,11 +171,18 @@ fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
                     // let pos = t / t_mult;
                     // if true {return vec4<f32>(pos, 1.0);}
                     let vcolor = get_color(node & LEAF_MASK, pos);
-                    let diffuse = max(dot(global_lights[0].dir, normals[axis]) + 0.1, 0.0);
-                    let ambient = 0.2;
-                    let lighting = max(diffuse, ambient);
-                    let new_color = min(vcolor.xyz * lighting, vec3<f32>(1.0));
-                    color += vec4<f32>(new_color.xyz * vcolor.a, vcolor.a) * (1.0 - color.a);
+                    let normal = normals[axis];
+                    let light_color = vec3<f32>(1.0);
+                    let light_dir = global_lights[0].dir;
+
+                    let diffuse = max(dot(light_dir, normal), 0.0) * light_color;
+                    let ambient = AMBIENT * light_color;
+                    let spec_val = pow(max(dot(dir_view.xyz, reflect(-light_dir, normal)), 0.0), 32.0) * SPECULAR;
+                    let specular = spec_val * light_color;
+                    let new_color = (ambient + diffuse + specular) * vcolor.xyz;
+                    let new_a = min(vcolor.a + spec_val, 1.0);
+
+                    color += vec4<f32>(new_color.xyz * new_a, new_a) * (1.0 - color.a);
                     if color.a > FULL_ALPHA { break; }
                 }
                 prev = node;

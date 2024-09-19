@@ -2,9 +2,12 @@ use std::time::Duration;
 
 use nalgebra::Rotation3;
 use ndarray::Array3;
-use winit::{keyboard::KeyCode as Key, window::CursorGrabMode};
+use winit::{event::MouseButton, keyboard::KeyCode as Key, window::CursorGrabMode};
 
-use crate::common::{component::{chunk, VoxelGrid, VoxelGridBundle}, ServerMessage};
+use crate::common::{
+    component::{chunk, VoxelGrid, VoxelGridBundle},
+    ServerMessage,
+};
 
 use super::{render::voxel::VoxelColor, Client};
 
@@ -71,6 +74,11 @@ impl Client<'_> {
             } else {
                 state.speed += input.scroll_delta * 0.2;
             }
+        }
+
+        if input.mouse_pressed(MouseButton::Middle) && input.pressed(Key::ControlLeft) {
+            state.camera_scroll = 0.0;
+            state.camera.scale = 0.2f32.exp();
         }
 
         // camera position
