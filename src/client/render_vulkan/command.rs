@@ -7,8 +7,6 @@ use super::{voxel::VoxelColor, Renderer};
 use bevy_ecs::entity::Entity;
 use nalgebra::{Rotation3, Vector3};
 use ndarray::Array3;
-use std::sync::Arc;
-use winit::window::Window;
 
 #[derive(Debug, Clone)]
 pub enum RenderCommand {
@@ -42,7 +40,7 @@ pub struct UpdateGridTransform {
     pub orientation: Rotation3<f32>,
 }
 
-impl<'a> Renderer<'a> {
+impl Renderer {
     pub fn handle_commands(&mut self, commands: Vec<RenderCommand>) {
         let mut new_camera = false;
         for cmd in commands {

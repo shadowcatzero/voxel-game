@@ -1,14 +1,16 @@
 mod command;
 mod util;
 pub mod voxel;
+use std::sync::Arc;
+
 pub use command::*;
 
 use super::camera::Camera;
-use crate::{client::rsc::CLEAR_COLOR, util::timer::Timer};
+use crate::client::rsc::CLEAR_COLOR;
 use nalgebra::Vector2;
 use util::DepthTexture;
 use voxel::VoxelPipeline;
-use winit::dpi::PhysicalSize;
+use winit::{dpi::PhysicalSize, window::Window};
 
 pub struct Renderer<'a> {
     size: Vector2<u32>,
@@ -25,10 +27,19 @@ pub struct Renderer<'a> {
 
 impl<'a> Renderer<'a> {
     pub fn new(
-        instance: wgpu::Instance,
-        surface: wgpu::Surface<'a>,
-        size: PhysicalSize<u32>,
+        window: Arc<Window>,
     ) -> Self {
+        let size = window.inner_size();
+
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::PRIMARY,
+            ..Default::default()
+        });
+
+        let surface = instance
+            .create_surface(window)
+            .expect("Could not create window surface!");
+
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::default(),
             compatible_surface: Some(&surface),
@@ -36,11 +47,16 @@ impl<'a> Renderer<'a> {
         }))
         .expect("Could not get adapter!");
 
+        let buf_size = (10u32.pow(9) * 15) / 10;
         let (device, queue) = pollster::block_on(adapter.request_device(
             &wgpu::DeviceDescriptor {
                 label: None,
                 required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::default(),
+                required_limits: wgpu::Limits {
+                    max_storage_buffer_binding_size: buf_size,
+                    max_buffer_size: buf_size as u64,
+                    ..Default::default()
+                },
                 memory_hints: wgpu::MemoryHints::default(),
             },
             None, // Trace path
@@ -160,8 +176,7 @@ impl<'a> Renderer<'a> {
         self.surface.configure(&self.device, &self.config);
         self.voxel_pipeline.resize(&self.device, self.size);
 
-        self.depth_texture =
-            DepthTexture::init(&self.device, &self.config, "depth_texture");
+        self.depth_texture = DepthTexture::init(&self.device, &self.config, "depth_texture");
         self.voxel_pipeline.update_view(
             &self.device,
             &mut self.encoder,

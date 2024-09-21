@@ -3,8 +3,9 @@ use std::collections::{HashMap, HashSet};
 use bevy_ecs::{entity::Entity, system::Commands};
 
 use crate::{
-    common::component::{ChunkBundle, ChunkData, ChunkMesh, ChunkPos}, server::generation::generate_tree, util::
-        thread::{ExitType, ThreadChannel, ThreadHandle}
+    common::component::{ChunkBundle, ChunkData, ChunkMesh, ChunkPos},
+    server::generation::generate_tree,
+    util::{oct_tree::OctTree, thread::{ExitType, ThreadChannel, ThreadHandle}},
 };
 
 pub struct ChunkManager {
@@ -107,7 +108,14 @@ fn chunk_loader_main(channel: ThreadChannel<ServerChunkMsg, ChunkLoaderMsg>) {
                 let tree = ChunkData::from_tree(generate_tree(pos));
                 let tree_time = std::time::Instant::now() - start;
 
-                println!("gen time: {:<5?}; size: {}", tree_time, tree.raw().len());
+                // let worst = OctTree::from_fn(f_leaf, f_node, levels);
+
+                println!(
+                    "gen time: {:<5?}; size: {} nodes = {} bytes",
+                    tree_time,
+                    tree.raw().len(),
+                    std::mem::size_of_val(tree.raw())
+                );
 
                 channel.send(ServerChunkMsg::ChunkGenerated(GeneratedChunk {
                     pos,
@@ -121,4 +129,3 @@ fn chunk_loader_main(channel: ThreadChannel<ServerChunkMsg, ChunkLoaderMsg>) {
         }
     }
 }
-

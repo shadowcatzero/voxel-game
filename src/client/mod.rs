@@ -3,6 +3,7 @@ mod camera;
 mod component;
 mod handle_input;
 mod input;
+// mod render_vulkan;
 pub mod render;
 mod rsc;
 mod state;
@@ -66,7 +67,7 @@ impl Client<'_> {
                 .expect("Failed to create window"),
         );
 
-        let renderer = Renderer::spawn(window.clone());
+        let renderer = Renderer::new(window.clone());
         world.insert_resource(RenderCommands(Vec::new()));
 
         let state = ClientState::new();

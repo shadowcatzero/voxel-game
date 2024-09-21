@@ -31,7 +31,13 @@ impl OctNode {
     }
 }
 
-type OctNodeMap = FxHashMap<[OctNode; 8], OctNode>;
+#[derive(Debug, Clone, Copy)]
+struct OctNodeEntry {
+    pub node: OctNode,
+    pub count: u32,
+}
+
+type OctNodeMap = FxHashMap<[OctNode; 8], OctNodeEntry>;
 
 #[derive(Debug, Clone)]
 pub struct OctTree {
@@ -61,7 +67,10 @@ impl OctTree {
             levels,
         }
     }
-    pub fn from_fn_rec(
+    pub fn from_leaf_fn(f_leaf: &mut impl FnMut(Vector3<usize>) -> u32, levels: u32) -> OctTree {
+        Self::from_fn(f_leaf, &mut |_, _| None, levels)
+    }
+    pub fn from_fn(
         f_leaf: &mut impl FnMut(Vector3<usize>) -> u32,
         f_node: &mut impl FnMut(Vector3<usize>, u32) -> Option<u32>,
         levels: u32,
@@ -102,8 +111,9 @@ impl OctTree {
                 core::array::from_fn(|i| OctNode::new_leaf(f_leaf(offset + CORNERS[i])));
             if leaves[1..].iter().all(|l| *l == leaves[0]) {
                 data.push(leaves[0]);
-            } else if let Some(node) = map.get(&leaves) {
-                data.push(*node);
+            } else if let Some(entry) = map.get_mut(&leaves) {
+                data.push(entry.node);
+                entry.count += 1;
             } else {
                 data.extend_from_slice(&leaves);
             }
@@ -128,7 +138,10 @@ impl OctTree {
                     let node = OctNode::new_node(sub_start as u32);
                     data[i + j] = node;
                     data_start += len;
-                    map.insert(data[sub_start..sub_start+8].try_into().unwrap(), node);
+                    map.insert(
+                        data[sub_start..sub_start + 8].try_into().unwrap(),
+                        OctNodeEntry { node, count: 1 },
+                    );
                 }
             }
         }
@@ -137,14 +150,15 @@ impl OctTree {
             if first.is_leaf() && data[i + 1..i + 8].iter().all(|l| *l == first) {
                 data.truncate(i);
                 data.push(first);
-            } else if let Some(node) = map.get(&data[i..i + 8]) {
+            } else if let Some(entry) = map.get_mut(&data[i..i + 8]) {
                 data.truncate(i);
-                data.push(*node);
+                data.push(entry.node);
+                entry.count += 1;
             }
         }
     }
     pub fn from_arr(arr: ArrayView3<u32>, levels: u32) -> Self {
-        Self::from_fn_rec(&mut |p| arr[(p.x, p.y, p.z)], &mut |_, _| None, levels)
+        Self::from_fn(&mut |p| arr[(p.x, p.y, p.z)], &mut |_, _| None, levels)
     }
     pub fn get(&self, mut pos: Vector3<usize>) -> u32 {
         let mut data_start = 1;
@@ -164,7 +178,6 @@ impl OctTree {
     pub fn raw(&self) -> &[OctNode] {
         &self.data
     }
-    pub fn mesh(&self) {}
 }
 
 pub struct OctTreeIter<'a> {

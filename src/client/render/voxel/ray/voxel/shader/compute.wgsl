@@ -61,7 +61,7 @@ const EPSILON = 0.00000000001;
 const MAX_ITERS = 10000;
 // NOTE: CANNOT GO HIGHER THAN 23 due to how floating point
 // numbers are stored and the bit manipulation used
-const MAX_SCALE: u32 = 13;
+const MAX_SCALE: u32 = 16;
 const AMBIENT: f32 = 0.2;
 const SPECULAR: f32 = 0.5;
 
