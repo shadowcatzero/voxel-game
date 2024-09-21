@@ -1,5 +1,5 @@
-use fastnoise_simd::FastNoiseSIMD;
 use nalgebra::Vector3;
+use simdnoise::{NoiseBuilder, Settings};
 
 use crate::{
     common::component::{chunk, ChunkPos},
@@ -11,10 +11,10 @@ pub fn generate_tree(pos: ChunkPos) -> OctTree {
         return OctTree::from_leaf(0, 8);
     }
     let posf: Vector3<f32> = pos.cast() * chunk::SIDE_LENGTH as f32;
-    let noise1 = generate_noise_map(2, 1.0, posf, chunk::SCALE, &mut |v: f32| {
+    let noise1 = generate_noise_map(0, 1.0, posf, chunk::SCALE, &mut |v: f32| {
         (v * 2.0).exp2() * TOP * 0.25
     });
-    let noise2 = generate_noise_map(0, 50.0, posf, chunk::SCALE, &mut |v: f32| v * 20.0 + GRASS);
+    let noise2 = generate_noise_map(1, 50.0, posf, chunk::SCALE, &mut |v: f32| v * 20.0 + GRASS);
     OctTree::from_fn(
         &mut |p| generate_leaf(p, posf, (&noise1.base, &noise2.base)),
         &mut |p, lvl| generate_node(p, lvl, posf, (&noise1, &noise2)),
@@ -89,15 +89,10 @@ fn generate_noise_map(
     adjust: &mut impl FnMut(f32) -> f32,
 ) -> NoiseMap {
     let mut size = 2usize.pow(levels);
-    let posi = Vector3::new(posf.x as i32, posf.y as i32, posf.z as i32);
-    let noise = FastNoiseSIMD::new(seed).get_simplex_set(posi.x, posi.y, posi.z, size as i32, size as i32, 1, freq * 150.0 / size as f32);
-    let mut base = noise.as_vec();
-    let (mut min, mut max) = (f32::MAX, f32::MIN);
-    for v in &base {
-        min = v.min(min);
-        max = v.max(max);
-    }
-    println!("{min}, {max}");
+    let (mut base, min, max) = NoiseBuilder::gradient_2d_offset(posf.x, size, posf.z, size)
+        .with_seed(seed)
+        .with_freq(freq / (size as f32))
+        .generate();
     for v in &mut base {
         *v = adjust((*v - min) / (max - min));
     }
