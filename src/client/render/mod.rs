@@ -23,6 +23,7 @@ pub struct Renderer<'a> {
     voxel_pipeline: VoxelPipeline,
     timer: GPUTimer,
     camera: Camera,
+    start: std::time::Instant,
 }
 
 impl<'a> Renderer<'a> {
@@ -49,12 +50,14 @@ impl<'a> Renderer<'a> {
         let (device, queue) = pollster::block_on(adapter.request_device(
             &wgpu::DeviceDescriptor {
                 label: None,
-                required_features: wgpu::Features::TIMESTAMP_QUERY
+                required_features: wgpu::Features::PUSH_CONSTANTS
+                    | wgpu::Features::TIMESTAMP_QUERY
                     | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS
                     | wgpu::Features::TIMESTAMP_QUERY_INSIDE_PASSES,
                 required_limits: wgpu::Limits {
                     max_storage_buffer_binding_size: buf_size,
                     max_buffer_size: buf_size as u64,
+                    max_push_constant_size: 4,
                     ..Default::default()
                 },
                 memory_hints: wgpu::MemoryHints::default(),
@@ -106,6 +109,7 @@ impl<'a> Renderer<'a> {
             device,
             config,
             queue,
+            start: std::time::Instant::now(),
         }
     }
 
@@ -124,6 +128,7 @@ impl<'a> Renderer<'a> {
     }
 
     pub fn draw(&mut self) {
+        let time = self.start.elapsed();
         let mut encoder = std::mem::replace(&mut self.encoder, Self::create_encoder(&self.device));
         let output = self.surface.get_current_texture().unwrap();
         let view = output
@@ -135,7 +140,7 @@ impl<'a> Renderer<'a> {
             timestamp_writes: None,
         });
         self.timer.start_compute(&mut compute_pass, 0);
-        self.voxel_pipeline.compute(&mut compute_pass);
+        self.voxel_pipeline.compute(&mut compute_pass, time);
         self.timer.stop_compute(&mut compute_pass, 0);
         drop(compute_pass);
 

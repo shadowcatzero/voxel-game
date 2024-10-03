@@ -14,10 +14,7 @@ use bevy_ecs::entity::Entity;
 pub use color::*;
 use layout::Layout;
 use nalgebra::{Transform3, Translation3, Vector2};
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::collections::HashMap;
 use wgpu::include_wgsl;
 use {chunk::Chunk, view::View};
 
@@ -171,9 +168,11 @@ impl VoxelPipeline {
 
     pub const WORKGROUP_SIZE: u32 = 8;
 
-    pub fn compute(&self, pass: &mut wgpu::ComputePass) {
+    pub fn compute(&self, pass: &mut wgpu::ComputePass, time: std::time::Duration) {
+        let time = time.as_millis() as u32;
         pass.set_pipeline(&self.compute_pipeline);
         pass.set_bind_group(0, &self.compute_bind_group, &[]);
+        pass.set_push_constants(0, &time.to_le_bytes());
         let buf = &self.layout.texture.texture;
         let x = (buf.width() - 1) / Self::WORKGROUP_SIZE + 1;
         let y = (buf.height() - 1) / Self::WORKGROUP_SIZE + 1;

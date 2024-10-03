@@ -9,6 +9,8 @@ var<storage, read> global_lights: array<GlobalLight>;
 @group(0) @binding(4)
 var output: texture_storage_2d<rgba8unorm, write>;
 
+var<push_constant> time: u32;
+
 struct GlobalLight {
     dir: vec3<f32>,
 };
@@ -226,22 +228,6 @@ fn cast_ray(
     return RayResult(hits, depth);
 }
 
-fn trace_chunk(
-    offset: u32,
-    inv_dir_bits: u32,
-    t: f32, t_mult: f32, inc_t: vec3<f32>,
-    min_adj: vec3<f32>
-) {
-}
-
-fn dir_to_vec(bits: u32) -> vec3<u32> {
-    return vec3<u32>(bits >> 2, (bits & 2) >> 1, bits & 1);
-}
-
-fn vec_to_dir(vec: vec3<u32>) -> u32 {
-    return vec.x * 4 + vec.y * 2 + vec.z * 1;
-}
-
 fn min_alpha(id: u32) -> f32 {
     switch id {
         case 0u: {return 0.0;}
@@ -274,7 +260,8 @@ fn shade(id: u32, pos: vec3<f32>, normal: vec3<f32>, dir_view: vec3<f32>, dist: 
         case 3u: {
             let fog = min(dist / 64.0, 1.0);
             let a = 0.5;
-            let rgb = vec3<f32>(0.5, 0.5, 1.0) * (random2 * 0.2 + 0.8);
+            let rand = (sin((f32(time) / 2000.0 + random) * 6.28) + 1.0) / 2.0;
+            let rgb = vec3<f32>(0.5, 0.5, 1.0) * (rand * 0.2 + 0.8);
             color = vec4<f32>(rgb * (1.0 - fog * a), a + fog * (1.0 - a));
         }
         default: {}
@@ -289,6 +276,14 @@ fn shade(id: u32, pos: vec3<f32>, normal: vec3<f32>, dir_view: vec3<f32>, dist: 
     let new_color = (ambient + diffuse + specular) * color.xyz;
     let new_a = min(color.a + spec_val, 1.0);
     return vec4<f32>(new_color * new_a, new_a);
+}
+
+fn dir_to_vec(bits: u32) -> vec3<u32> {
+    return vec3<u32>(bits >> 2, (bits & 2) >> 1, bits & 1);
+}
+
+fn vec_to_dir(vec: vec3<u32>) -> u32 {
+    return vec.x * 4 + vec.y * 2 + vec.z * 1;
 }
 
 fn random(pos: vec3<f32>) -> f32 {

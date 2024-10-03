@@ -20,8 +20,7 @@ impl Timer {
         self.start = Instant::now();
     }
     pub fn stop(&mut self) {
-        let duration = Instant::now() - self.start;
-        self.durs[self.pos] = Some(duration);
+        self.durs[self.pos] = Some(self.start.elapsed());
         self.times[self.pos] = Some(self.start);
         self.pos = (self.pos + 1) % self.times.len();
     }

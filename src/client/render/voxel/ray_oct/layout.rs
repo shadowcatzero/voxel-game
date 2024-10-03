@@ -124,7 +124,10 @@ impl Layout {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("voxel compute"),
                 bind_group_layouts: &[&compute_bind_layout],
-                push_constant_ranges: &[],
+                push_constant_ranges: &[wgpu::PushConstantRange {
+                    range: 0..4,
+                    stages: wgpu::ShaderStages::COMPUTE,
+                }],
             });
         Self {
             view,
