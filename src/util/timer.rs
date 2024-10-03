@@ -25,6 +25,11 @@ impl Timer {
         self.times[self.pos] = Some(self.start);
         self.pos = (self.pos + 1) % self.times.len();
     }
+    pub fn add(&mut self, duration: Duration) {
+        self.durs[self.pos] = Some(duration);
+        self.times[self.pos] = Some(Instant::now());
+        self.pos = (self.pos + 1) % self.times.len();
+    }
     pub fn avg(&self) -> Duration {
         let filtered: Vec<_> = self.durs.iter().filter_map(|d| *d).collect();
         let len = filtered.len();
@@ -45,8 +50,9 @@ impl Timer {
     pub fn per_sec(&self) -> usize {
         let now = Instant::now();
         let mut count = 0;
-        while count < self.times.len() {
-            let i = (self.pos + count + 1) % self.times.len();
+        let len = self.times.len();
+        while count < len {
+            let i = (self.pos + len - count - 1) % len;
             let Some(t) = self.times[i] else { break };
             if now - t <= Duration::from_secs(1) {
                 count += 1;

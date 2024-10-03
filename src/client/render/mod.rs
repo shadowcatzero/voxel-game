@@ -8,7 +8,7 @@ pub use command::*;
 use super::camera::Camera;
 use crate::client::rsc::CLEAR_COLOR;
 use nalgebra::Vector2;
-use util::DepthTexture;
+use util::GPUTimer;
 use voxel::VoxelPipeline;
 use winit::{dpi::PhysicalSize, window::Window};
 
@@ -21,14 +21,12 @@ pub struct Renderer<'a> {
     config: wgpu::SurfaceConfiguration,
     staging_belt: wgpu::util::StagingBelt,
     voxel_pipeline: VoxelPipeline,
+    timer: GPUTimer,
     camera: Camera,
-    depth_texture: DepthTexture,
 }
 
 impl<'a> Renderer<'a> {
-    pub fn new(
-        window: Arc<Window>,
-    ) -> Self {
+    pub fn new(window: Arc<Window>) -> Self {
         let size = window.inner_size();
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -47,11 +45,13 @@ impl<'a> Renderer<'a> {
         }))
         .expect("Could not get adapter!");
 
-        let buf_size = (10u32.pow(9) * 15) / 10;
+        let buf_size = (10f32.powi(9) * 1.5) as u32;
         let (device, queue) = pollster::block_on(adapter.request_device(
             &wgpu::DeviceDescriptor {
                 label: None,
-                required_features: wgpu::Features::empty(),
+                required_features: wgpu::Features::TIMESTAMP_QUERY
+                    | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS
+                    | wgpu::Features::TIMESTAMP_QUERY_INSIDE_PASSES,
                 required_limits: wgpu::Limits {
                     max_storage_buffer_binding_size: buf_size,
                     max_buffer_size: buf_size as u64,
@@ -94,8 +94,6 @@ impl<'a> Renderer<'a> {
         // doesn't affect performance much and depends on "normal" zoom
         let staging_belt = wgpu::util::StagingBelt::new(4096 * 4);
 
-        let depth_texture = DepthTexture::init(&device, &config, "depth_texture");
-
         Self {
             camera: Camera::default(),
             size: Vector2::new(size.width, size.height),
@@ -103,10 +101,10 @@ impl<'a> Renderer<'a> {
             staging_belt,
             surface,
             encoder: Self::create_encoder(&device),
+            timer: GPUTimer::new(&device, 1),
             device,
             config,
             queue,
-            depth_texture,
         }
     }
 
@@ -135,7 +133,9 @@ impl<'a> Renderer<'a> {
             label: None,
             timestamp_writes: None,
         });
+        self.timer.start_compute(&mut compute_pass, 0);
         self.voxel_pipeline.compute(&mut compute_pass);
+        self.timer.stop_compute(&mut compute_pass, 0);
         drop(compute_pass);
 
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -148,14 +148,6 @@ impl<'a> Renderer<'a> {
                     store: wgpu::StoreOp::Store,
                 },
             })],
-            // depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-            //     view: &self.depth_texture.view,
-            //     depth_ops: Some(wgpu::Operations {
-            //         load: wgpu::LoadOp::Clear(1.0),
-            //         store: wgpu::StoreOp::Store,
-            //     }),
-            //     stencil_ops: None,
-            // }),
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
@@ -163,10 +155,14 @@ impl<'a> Renderer<'a> {
         self.voxel_pipeline.draw(&mut render_pass);
         drop(render_pass);
 
+        self.timer.resolve(&mut encoder);
+
         self.staging_belt.finish();
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
         self.staging_belt.recall();
+
+        self.timer.finish(&self.device);
     }
 
     pub fn resize(&mut self, size: PhysicalSize<u32>) {
@@ -175,14 +171,15 @@ impl<'a> Renderer<'a> {
         self.config.height = size.height;
         self.surface.configure(&self.device, &self.config);
         self.voxel_pipeline.resize(&self.device, self.size);
-
-        self.depth_texture = DepthTexture::init(&self.device, &self.config, "depth_texture");
         self.voxel_pipeline.update_view(
             &self.device,
             &mut self.encoder,
             &mut self.staging_belt,
-            self.size,
             &self.camera,
         );
+    }
+
+    pub fn timer(&self) -> &GPUTimer {
+        &self.timer
     }
 }

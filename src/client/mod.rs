@@ -19,7 +19,7 @@ use system::render::add_grid;
 
 use crate::{
     common::{ClientMessage, ServerHandle, ServerMessage},
-    server::Server,
+    server::Server, util::timer::Timer,
 };
 
 use self::{input::Input, render::Renderer, ClientState};
@@ -37,6 +37,7 @@ pub struct Client<'a> {
     window: Arc<Window>,
     state: ClientState,
     renderer: Renderer<'a>,
+    render_timer: Timer,
     render_commands: Vec<RenderCommand>,
     exit: bool,
     input: Input,
@@ -78,6 +79,7 @@ impl Client<'_> {
             window,
             exit: false,
             renderer,
+            render_timer: Timer::new(60),
             render_commands: Vec::new(),
             state,
             input: Input::new(),
@@ -132,17 +134,18 @@ impl Client<'_> {
             commands.extend(world_cmds);
             self.renderer.handle_commands(commands);
             self.renderer.draw();
+            self.render_timer.add(self.renderer.timer().duration(0));
         }
 
         if now >= self.second_target {
             self.second_target += Duration::from_secs(1);
-            // let timer = self.renderer.timer();
-            // println!(
-            //     "avg: {:4?}; max: {:4?}; fps: {:4?}",
-            //     timer.avg(),
-            //     timer.max(),
-            //     timer.per_sec(),
-            // );
+            let timer = &self.render_timer;
+            println!(
+                "avg: {:4?}; max: {:4?}; fps: {:4?}",
+                timer.avg(),
+                timer.max(),
+                timer.per_sec(),
+            );
         }
 
         if self.exit {

@@ -7,8 +7,6 @@ use super::{voxel::VoxelColor, Renderer};
 use bevy_ecs::entity::Entity;
 use nalgebra::{Rotation3, Vector3};
 use ndarray::Array3;
-use std::sync::Arc;
-use winit::window::Window;
 
 #[derive(Debug, Clone)]
 pub enum RenderCommand {
@@ -76,7 +74,6 @@ impl<'a> Renderer<'a> {
                 &self.device,
                 &mut self.encoder,
                 &mut self.staging_belt,
-                self.size,
                 &self.camera,
             );
         }

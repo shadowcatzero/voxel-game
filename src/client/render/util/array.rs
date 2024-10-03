@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 use wgpu::{util::DeviceExt, BufferAddress, BufferUsages};
 
-pub struct ArrBuf<T: bytemuck::Pod> {
+pub struct ArrayBuffer<T: bytemuck::Pod> {
     len: usize,
     buffer: wgpu::Buffer,
     label: String,
@@ -10,7 +10,7 @@ pub struct ArrBuf<T: bytemuck::Pod> {
     moves: Vec<BufMove>,
 }
 
-impl<T: bytemuck::Pod> ArrBuf<T> {
+impl<T: bytemuck::Pod> ArrayBuffer<T> {
     pub fn update(
         &mut self,
         device: &wgpu::Device,
@@ -60,6 +60,42 @@ impl<T: bytemuck::Pod> ArrBuf<T> {
             view.copy_from_slice(bytemuck::cast_slice(update.data));
         }
         resized
+    }
+
+    pub fn add(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        belt: &mut wgpu::util::StagingBelt,
+        data: &[T],
+    ) {
+        self.update(
+            device,
+            encoder,
+            belt,
+            self.len + data.len(),
+            &[ArrBufUpdate {
+                offset: self.len,
+                data,
+            }],
+        );
+    }
+
+    pub fn set(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        belt: &mut wgpu::util::StagingBelt,
+        offset: usize,
+        data: &[T],
+    ) {
+        self.update(
+            device,
+            encoder,
+            belt,
+            self.len,
+            &[ArrBufUpdate { offset, data }],
+        );
     }
 
     pub fn init(device: &wgpu::Device, label: &str, usage: BufferUsages) -> Self {
@@ -116,16 +152,37 @@ impl<T: bytemuck::Pod> ArrBuf<T> {
         })
     }
 
-    pub fn buffer(&self) -> &wgpu::Buffer {
-        &self.buffer
-    }
-
     pub fn mov(&mut self, mov: BufMove) {
         self.moves.push(mov);
     }
 
     pub fn len(&self) -> usize {
         self.len
+    }
+
+    pub fn bind_group_layout_entry(
+        &self,
+        binding: u32,
+        visibility: wgpu::ShaderStages,
+        ty: wgpu::BufferBindingType,
+    ) -> wgpu::BindGroupLayoutEntry {
+        wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility,
+            ty: wgpu::BindingType::Buffer {
+                ty,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        }
+    }
+
+    pub fn bind_group_entry(&self, binding: u32) -> wgpu::BindGroupEntry {
+        return wgpu::BindGroupEntry {
+            binding,
+            resource: self.buffer.as_entire_binding(),
+        };
     }
 }
 

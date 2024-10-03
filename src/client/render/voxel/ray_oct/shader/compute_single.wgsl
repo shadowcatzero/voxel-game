@@ -35,67 +35,13 @@ fn main(@builtin(global_invocation_id) cell: vec3<u32>) {
     }
     let view_dim_f = vec2<f32>(view_dim);
     let aspect = view_dim_f.y / view_dim_f.x;
-    let pixel_pos = vec3<f32>(
-        (vec2<f32>(cell.xy) / view_dim_f - vec2<f32>(0.5)) * vec2<f32>(2.0, -2.0 * aspect),
-        view.zoom
+    let pixel_pos = vec2<f32>(
+        (vec2<f32>(cell.xy) / view_dim_f - vec2<f32>(0.5)) * vec2<f32>(2.0, -2.0 * aspect)
     );
-    let pos = view.transform * vec4<f32>(pixel_pos, 1.0);
-    let dir = view.transform * vec4<f32>(normalize(pixel_pos), 0.0);
+    let pos = view.transform * vec4<f32>(pixel_pos, 1.0, 1.0);
+    let dir = view.transform * vec4<f32>(normalize(vec3<f32>(pixel_pos, view.zoom)), 0.0);
 
-    let start = start_ray(pos, dir);
-    var color = vec4<f32>(0.0);
-    let ambient = 0.2;
-
-    if start.hit {
-        var res = ray_next(start.ray, LEAF_BIT);
-        var normals = start.normals;
-        let specular = (exp(max(
-            -(dot(reflect(dir.xyz, normals[res.ray.axis]), global_lights[0].dir) + 0.90) * 4.0, 0.0
-        )) - 1.0);
-        while res.data != 0 {
-            let data = res.data & LEAF_MASK;
-            if data != 0 {
-                let vcolor = get_color(data);
-                let diffuse = max(dot(global_lights[0].dir, normals[res.ray.axis]) + 0.1, 0.0);
-                let light = max(diffuse, ambient);
-                let new_color = min(vcolor.xyz * light, vec3<f32>(1.0));
-                color += vec4<f32>(new_color.xyz * vcolor.a, vcolor.a) * (1.0 - color.a);
-                if color.a > FULL_ALPHA { break; }
-            }
-            let old_t = res.ray.t;
-            res = ray_next(res.ray, res.data);
-            if data == 3 {
-                let dist = (res.ray.t - old_t) / start.t_mult;
-                let a = min(dist / 12.0, 1.0);
-                color += vec4<f32>(vec3<f32>(0.0) * a, a) * (1.0 - color.a);
-            }
-        }
-        if color.a != 0 {
-            let pos = pos + dir * res.ray.t / start.t_mult - vec4<f32>(normals[res.ray.axis] * 0.001, 0.0);
-            let dir = vec4<f32>(-global_lights[0].dir, 0.0);
-            let start = start_ray(pos, dir);
-            res = ray_next(start.ray, LEAF_BIT);
-            var light = 1.0;
-            while res.data != 0 {
-                let data = res.data & LEAF_MASK;
-                if data != 0 {
-                    let vcolor = get_color(data);
-                    if data != 3 { light -= vcolor.a * light; }
-                    if light <= 0 { break; }
-                }
-                let old_t = res.ray.t;
-                res = ray_next(res.ray, res.data);
-                if data == 3 {
-                    let dist = (res.ray.t - old_t) / start.t_mult;
-                    let a = min(dist / 12.0, 1.0);
-                    light -= a;
-                }
-            }
-            color = vec4<f32>(color.xyz * max(light, ambient), color.a) + vec4<f32>(vec3<f32>(specular * light), 0.0);
-        }
-        // color = vec4<f32>(pos.xyz / 128.0, 1.0);
-    }
-    // var color = trace_full(pos, dir);
+    var color = trace_full(pos, dir);
     let light_mult = clamp((-dot(dir.xyz, global_lights[0].dir) - 0.99) * 200.0, 0.0, 1.0);
     let sun_color = light_mult * vec3<f32>(1.0, 1.0, 1.0);
     let sky_bg = vec3<f32>(0.3, 0.6, 1.0);
@@ -112,49 +58,25 @@ const ZERO3F = vec3<f32>(0.0);
 const ZERO2F = vec2<f32>(0.0);
 const FULL_ALPHA = 0.999;
 const EPSILON = 0.00000000001;
-const MAX_ITERS = 2000;
+const MAX_ITERS = 10000;
 // NOTE: CANNOT GO HIGHER THAN 23 due to how floating point
 // numbers are stored and the bit manipulation used
-const MAX_SCALE: u32 = 10;
+const MAX_SCALE: u32 = 13;
+const AMBIENT: f32 = 0.2;
+const SPECULAR: f32 = 0.5;
 
-struct Ray {
-    t: f32,
-    vox_pos: vec3<f32>,
-    t_inc: vec3<f32>,
-    scale: u32,
-    min_adj: vec3<f32>,
-    child: u32,
-    axis: u32,
-    node_start: u32,
-    group_offset: u32,
-    inv_dir_bits: u32,
-    parents: array<u32, MAX_SCALE>,
-};
-
-struct RayResult {
-    ray: Ray,
-    data: u32,
-}
-
-struct RayStart {
-    hit: bool,
-    ray: Ray,
-    normals: mat3x3<f32>,
-    t_mult: f32,
-}
-
-fn start_ray(pos_view: vec4<f32>, dir_view: vec4<f32>) -> RayStart {
+fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
     let gi = 0;
     let group = voxel_groups[gi];
     if group.scale == 0 {
-        return RayStart();
+        return vec4<f32>(0.0);
     }
     let dimensions = vec3<u32>(1u << group.scale);
     let dim_f = vec3<f32>(dimensions);
     let dim_i = vec3<i32>(dimensions);
 
     // transform so that group is at 0,0
-    let pos = (group.transform_inv * pos_view).xyz;
+    let pos_start = (group.transform_inv * pos_view).xyz;
     var dir = (group.transform_inv * dir_view).xyz;
     if dir.x == 0 {dir.x = EPSILON;}
     if dir.y == 0 {dir.y = EPSILON;}
@@ -176,12 +98,12 @@ fn start_ray(pos_view: vec4<f32>, dir_view: vec4<f32>) -> RayStart {
     // find where ray intersects with group
     let pos_min = (vec3<f32>(1.0) - dir_uf) * dim_f;
     // time of intersection; x = td + p, solve for t
-    var t_min = (pos_min - pos) / dir;
-    if outside3f(pos, ZERO3F, dim_f) {
+    var t_min = (pos_min - pos_start) / dir;
+    if outside3f(pos_start, ZERO3F, dim_f) {
         // points of intersection
-        let px = pos + t_min.x * dir;
-        let py = pos + t_min.y * dir;
-        let pz = pos + t_min.z * dir;
+        let px = pos_start + t_min.x * dir;
+        let py = pos_start + t_min.y * dir;
+        let pz = pos_start + t_min.z * dir;
 
         // check if point is in bounds
         let hit = vec3<bool>(
@@ -190,81 +112,80 @@ fn start_ray(pos_view: vec4<f32>, dir_view: vec4<f32>) -> RayStart {
             inside2f(pz.xy, ZERO2F, dim_f.xy),
         ) && (t_min > ZERO3F);
         if !any(hit) {
-            return RayStart();
+            return vec4<f32>(0.0);
         }
         axis = select(select(2u, 1u, hit.y), 0u, hit.x);
     }
     let t_mult = f32(1u << (MAX_SCALE - group.scale));
     t_min *= t_mult;
-    // time to move 1 unit in each direction
     let full = f32(1u << MAX_SCALE);
-    let t_inc = abs(1.0 / dir) * full;
+    // time to move entire side length in each direction
+    let inc_t = abs(1.0 / dir) * full;
     let t_offset = max(max(t_min.x, t_min.y), t_min.z);
-    let t = max(0.0, t_offset);
+    var t = max(0.0, t_offset);
 
     let dir_i = vec3<i32>(dir_if);
-    let dir_u = vec3<u32>((dir_i + vec3<i32>(1)) / 2);
+    let dir_u = vec3<u32>(dir_uf);
     let dir_bits = vec_to_dir(dir_u);
     let inv_dir_bits = 7 - dir_bits;
 
-    let node_start = 1u;
-    let scale = MAX_SCALE - 1;
-    let scale_exp2 = 0.5;
-    let parents = array<u32, MAX_SCALE>();
+    var node_start = 1u;
+    var scale = MAX_SCALE - 1;
+    var scale_exp2 = 0.5;
+    var color = vec4<f32>(0.0);
+    var parents = array<u32, MAX_SCALE>();
+    var prev = LEAF_BIT;
+    var old_t = t / t_mult;
 
     var child = 0u;
     var vox_pos = vec3<f32>(1.0);
-    let t_center = t_min + scale_exp2 * t_inc;
+    let t_center = t_min + scale_exp2 * inc_t;
     if t > t_center.x { vox_pos.x = 1.5; child |= 4u; }
     if t > t_center.y { vox_pos.y = 1.5; child |= 2u; }
     if t > t_center.z { vox_pos.z = 1.5; child |= 1u; }
-    let min_adj = t_min - t_inc;
+    let min_adj = t_min - inc_t;
 
-    return RayStart(
-        true,
-        Ray(
-            t,
-            vox_pos,
-            t_inc,
-            scale,
-            min_adj,
-            child,
-            axis,
-            node_start,
-            group.offset,
-            inv_dir_bits,
-            parents,
-        ),
-        normals,
-        t_mult,
-    );
-}
-
-fn ray_next(ray: Ray, skip: u32) -> RayResult {
-    let group_offset = ray.group_offset;
-    let t_inc = ray.t_inc;
-    let min_adj = ray.min_adj;
-    let inv_dir_bits = ray.inv_dir_bits;
-    var scale = ray.scale;
-    var scale_exp2 = bitcast<f32>((scale + 127 - MAX_SCALE) << 23);
-    var vox_pos = ray.vox_pos;
-    var t = ray.t;
-    var node_start = ray.node_start;
-    var child = ray.child;
-    var parents = ray.parents;
-    var axis: u32;
-    var data = 0u;
+    var iters = 0;
     loop {
-        let t_corner = vox_pos * t_inc + min_adj;
-        let node = voxels[group_offset + node_start + (child ^ inv_dir_bits)];
+        if iters == MAX_ITERS {
+            return vec4<f32>(1.0, 0.0, 1.0, 1.0);
+        }
+        iters += 1;
+        let t_corner = vox_pos * inc_t + min_adj;
+        let node = voxels[group.offset + node_start + (child ^ inv_dir_bits)];
         if node >= LEAF_BIT {
-            if node != skip {
-                data = node;
-                break;
+            if node != prev {
+                if node != LEAF_BIT {
+                    let real_t = t / t_mult;
+                    let dist = real_t - old_t;
+                    old_t = real_t;
+                    let filt = min(dist / 64.0, 1.0);
+                    if prev == LEAF_BIT + 3 {
+                        color.a += filt * (1.0 - color.a);
+                        if color.a > FULL_ALPHA { break; }
+                    }
+                    var pos = (pos_view + dir_view * real_t).xyz;
+                    pos[axis] = round(pos[axis]) - (1.0 - dir_uf[axis]);
+                    let vcolor = get_color(node & LEAF_MASK, pos);
+                    var normal = normals[axis];
+                    let light_color = vec3<f32>(1.0);
+                    let light_dir = global_lights[0].dir;
+
+                    let diffuse = max(dot(light_dir, normal), 0.0) * light_color;
+                    let ambient = AMBIENT * light_color;
+                    let spec_val = pow(max(dot(dir_view.xyz, reflect(-light_dir, normal)), 0.0), 32.0) * SPECULAR;
+                    let specular = spec_val * light_color;
+                    let new_color = (ambient + diffuse + specular) * vcolor.xyz;
+                    let new_a = min(vcolor.a + spec_val, 1.0);
+
+                    color += vec4<f32>(new_color.xyz * new_a, new_a) * (1.0 - color.a);
+                    if color.a > FULL_ALPHA { break; }
+                }
+                prev = node;
             }
 
             // move to next time point and determine which axis to move along
-            let t_next = t_corner + scale_exp2 * t_inc;
+            let t_next = t_corner + scale_exp2 * inc_t;
             t = min(min(t_next.x, t_next.y), t_next.z);
             axis = select(select(0u, 1u, t == t_next.y), 2u, t == t_next.z);
             let move_dir = 4u >> axis;
@@ -298,29 +219,17 @@ fn ray_next(ray: Ray, skip: u32) -> RayResult {
             // calculate child node vars
             scale_exp2 *= 0.5;
             child = 0u;
-            let t_center = t_corner + scale_exp2 * t_inc;
+            let t_center = t_corner + scale_exp2 * inc_t;
             if t > t_center.x { vox_pos.x += scale_exp2; child |= 4u; }
             if t > t_center.y { vox_pos.y += scale_exp2; child |= 2u; }
             if t > t_center.z { vox_pos.z += scale_exp2; child |= 1u; }
-            node_start += 8 + node;
+            node_start = node;
         }
     }
-    return RayResult(
-        Ray(
-            t,
-            vox_pos,
-            t_inc,
-            scale,
-            min_adj,
-            child,
-            axis,
-            node_start,
-            group_offset,
-            inv_dir_bits,
-            parents,
-        ),
-        data
-    );
+    // let fog = min(t / t_mult / 1000.0, 1.0);
+    // return vec4<f32>(color.xyz * (1.0 - fog) + vec3<f32>(fog), color.a * (1.0 - fog) + fog);
+    // return vec4<f32>(f32(iters) / f32(MAX_ITERS), 0.0, 0.0, 1.0);
+    return color;
 }
 
 fn dir_to_vec(bits: u32) -> vec3<u32> {
@@ -331,24 +240,33 @@ fn vec_to_dir(vec: vec3<u32>) -> u32 {
     return vec.x * 4 + vec.y * 2 + vec.z * 1;
 }
 
-fn get_color(id: u32) -> vec4<f32> {
+fn get_color(id: u32, pos: vec3<f32>) -> vec4<f32> {
+    let random = random(floor(pos));
+    let random2 = random(floor(pos) + vec3<f32>(0.0001));
     switch id {
         case 0u: {
             return vec4<f32>(0.0);
         }
         case 1u: {
-            return vec4<f32>(0.5, 0.5, 0.5, 1.0);
+            let color = vec3<f32>(0.5, 0.5, 0.5 + random * 0.2) * (random2 * 0.4 + 0.8);
+            return vec4<f32>(color, 1.0);
         }
         case 2u: {
-            return vec4<f32>(0.5, 1.0, 0.5, 1.0);
+            let color = vec3<f32>(0.4 + random * 0.2, 0.9, 0.4 + random * 0.2) * (random2 * 0.2 + 0.9);
+            return vec4<f32>(color, 1.0);
         }
         case 3u: {
-            return vec4<f32>(0.5, 0.5, 1.0, 0.5);
+            let color = vec3<f32>(0.5, 0.5, 1.0) * (random2 * 0.2 + 0.8);
+            return vec4<f32>(color, 0.5);
         }
         default: {
             return vec4<f32>(1.0, 0.0, 0.0, 1.0);
         }
     }
+}
+
+fn random(pos: vec3<f32>) -> f32 {
+    return fract(sin(dot(pos, vec3<f32>(12.9898, 78.233, 25.1279))) * 43758.5453123);
 }
 
 fn outside3f(v: vec3<f32>, low: vec3<f32>, high: vec3<f32>) -> bool {

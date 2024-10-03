@@ -86,7 +86,7 @@ impl OctTree {
         assert!(levels > 0);
         let mut data = Vec::new();
         let mut map = OctNodeMap::default();
-        data.push(OctNode::new_node(0));
+        data.push(OctNode::new_node(1));
         Self::from_fn_offset_inner(f_leaf, f_node, &mut data, levels, offset, &mut map);
         if data.len() == 2 {
             data.remove(0);

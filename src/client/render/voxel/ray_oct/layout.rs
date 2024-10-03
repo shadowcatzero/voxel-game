@@ -1,18 +1,18 @@
-use wgpu::TextureFormat;
+use wgpu::{BufferUsages, ShaderStages, TextureFormat};
 
-use super::{group::VoxelGroup, light::GlobalLight, view::View};
+use super::{chunk::Chunk, light::GlobalLight, view::View};
 use crate::{
-    client::render::util::{Storage, StorageTexture, Uniform},
+    client::render::util::{ArrayBuffer, Texture, Uniform},
     util::oct_tree::OctNode,
 };
 use nalgebra::Vector3;
 
 pub struct Layout {
-    pub texture: StorageTexture,
     pub view: Uniform<View>,
-    pub voxel_groups: Storage<VoxelGroup>,
-    pub voxels: Storage<OctNode>,
-    pub global_lights: Storage<GlobalLight>,
+    pub chunks: ArrayBuffer<Chunk>,
+    pub voxel_data: ArrayBuffer<OctNode>,
+    pub global_lights: ArrayBuffer<GlobalLight>,
+    pub texture: Texture,
     render_bind_layout: wgpu::BindGroupLayout,
     compute_bind_layout: wgpu::BindGroupLayout,
     render_pipeline_layout: wgpu::PipelineLayout,
@@ -23,27 +23,40 @@ pub struct Layout {
 impl Layout {
     pub fn init(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
         let view = Uniform::init(device, "view", 0);
-        let voxels = Storage::init(device, wgpu::ShaderStages::COMPUTE, "voxels", 1);
-        let voxel_groups = Storage::init(device, wgpu::ShaderStages::COMPUTE, "voxel groups", 2);
-        let global_lights = Storage::init_with(
+        let chunks = ArrayBuffer::init(device, "chunks", BufferUsages::STORAGE);
+        let voxel_data = ArrayBuffer::init_with(
             device,
-            wgpu::ShaderStages::COMPUTE,
+            "voxel data",
+            BufferUsages::STORAGE,
+            &[OctNode::new_leaf(0)],
+        );
+        let global_lights = ArrayBuffer::init_with(
+            device,
             "global lights",
-            3,
+            BufferUsages::STORAGE,
             &[GlobalLight {
                 direction: Vector3::new(-1.0, -2.3, 2.0).normalize(),
             }],
         );
-        let texture = StorageTexture::init(
-            device,
-            wgpu::Extent3d {
+        let desc = wgpu::TextureDescriptor {
+            label: Some("compute output"),
+            size: wgpu::Extent3d {
                 width: config.width,
                 height: config.height,
                 depth_or_array_layers: 1,
             },
-            "compute output",
-            wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
-            4,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        };
+        let texture = Texture::init(
+            device,
+            desc,
+            wgpu::TextureViewDescriptor::default(),
+            wgpu::SamplerDescriptor::default(),
         );
         let render_bind_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -73,10 +86,31 @@ impl Layout {
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[
                     view.bind_group_layout_entry(),
-                    voxels.bind_group_layout_entry(),
-                    voxel_groups.bind_group_layout_entry(),
-                    global_lights.bind_group_layout_entry(),
-                    texture.bind_group_layout_entry(),
+                    chunks.bind_group_layout_entry(
+                        1,
+                        ShaderStages::COMPUTE,
+                        wgpu::BufferBindingType::Storage { read_only: true },
+                    ),
+                    voxel_data.bind_group_layout_entry(
+                        2,
+                        ShaderStages::COMPUTE,
+                        wgpu::BufferBindingType::Storage { read_only: true },
+                    ),
+                    global_lights.bind_group_layout_entry(
+                        3,
+                        ShaderStages::COMPUTE,
+                        wgpu::BufferBindingType::Storage { read_only: true },
+                    ),
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::StorageTexture {
+                            access: wgpu::StorageTextureAccess::WriteOnly,
+                            format: texture.format(),
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
                 ],
                 label: Some("voxel compute"),
             });
@@ -94,8 +128,8 @@ impl Layout {
             });
         Self {
             view,
-            voxels,
-            voxel_groups,
+            voxel_data,
+            chunks,
             global_lights,
             texture,
             render_bind_layout,
@@ -110,16 +144,10 @@ impl Layout {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &self.render_bind_layout,
             entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&self.texture.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.texture.sampler),
-                },
+                self.texture.view_bind_group_entry(0),
+                self.texture.sampler_bind_group_entry(1),
             ],
-            label: Some("tile_bind_group"),
+            label: Some("voxel render"),
         })
     }
 
@@ -128,10 +156,10 @@ impl Layout {
             layout: &self.compute_bind_layout,
             entries: &[
                 self.view.bind_group_entry(),
-                self.voxels.bind_group_entry(),
-                self.voxel_groups.bind_group_entry(),
-                self.global_lights.bind_group_entry(),
-                self.texture.bind_group_entry(),
+                self.chunks.bind_group_entry(1),
+                self.voxel_data.bind_group_entry(2),
+                self.global_lights.bind_group_entry(3),
+                self.texture.view_bind_group_entry(4),
             ],
             label: Some("voxel compute"),
         })

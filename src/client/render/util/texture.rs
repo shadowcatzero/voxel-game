@@ -1,23 +1,26 @@
-pub struct DepthTexture {
+pub struct Texture {
+    texture_desc: wgpu::TextureDescriptor<'static>,
+    view_desc: wgpu::TextureViewDescriptor<'static>,
+    sampler_desc: wgpu::SamplerDescriptor<'static>,
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
     pub sampler: wgpu::Sampler,
 }
 
-impl DepthTexture {
+impl Texture {
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
-    pub fn init(
+    pub fn init_depth(
         device: &wgpu::Device,
         config: &wgpu::SurfaceConfiguration,
-        label: &str,
+        label: &'static str,
     ) -> Self {
         let size = wgpu::Extent3d {
             width: config.width + 1,
             height: config.height + 1,
             depth_or_array_layers: 1,
         };
-        let desc = wgpu::TextureDescriptor {
+        let texture_desc = wgpu::TextureDescriptor {
             label: Some(label),
             size,
             mip_level_count: 1,
@@ -27,97 +30,62 @@ impl DepthTexture {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         };
-        let texture = device.create_texture(&desc);
+        Self::init(
+            device,
+            texture_desc,
+            wgpu::TextureViewDescriptor::default(),
+            wgpu::SamplerDescriptor {
+                address_mode_u: wgpu::AddressMode::ClampToEdge,
+                address_mode_v: wgpu::AddressMode::ClampToEdge,
+                address_mode_w: wgpu::AddressMode::ClampToEdge,
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                mipmap_filter: wgpu::FilterMode::Nearest,
+                compare: Some(wgpu::CompareFunction::LessEqual),
+                lod_min_clamp: 0.0,
+                lod_max_clamp: 100.0,
+                ..Default::default()
+            },
+        )
+    }
 
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            compare: Some(wgpu::CompareFunction::LessEqual),
-            lod_min_clamp: 0.0,
-            lod_max_clamp: 100.0,
-            ..Default::default()
-        });
-
+    pub fn init(
+        device: &wgpu::Device,
+        texture_desc: wgpu::TextureDescriptor<'static>,
+        view_desc: wgpu::TextureViewDescriptor<'static>,
+        sampler_desc: wgpu::SamplerDescriptor<'static>,
+    ) -> Self {
+        let texture = device.create_texture(&texture_desc);
+        let view = texture.create_view(&view_desc);
+        let sampler = device.create_sampler(&sampler_desc);
         Self {
+            texture_desc,
+            view_desc,
+            sampler_desc,
             texture,
             view,
             sampler,
         }
     }
-}
 
-pub struct StorageTexture {
-    binding: u32,
-    visibility: wgpu::ShaderStages,
-    pub buf: wgpu::Texture,
-    pub view: wgpu::TextureView,
-    pub sampler: wgpu::Sampler,
-}
-
-impl StorageTexture {
-    pub const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
-
-    pub fn init(
-        device: &wgpu::Device,
-        size: wgpu::Extent3d,
-        label: &str,
-        visibility: wgpu::ShaderStages,
-        binding: u32,
-    ) -> Self {
-        let desc = wgpu::TextureDescriptor {
-            label: Some(label),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: Self::FORMAT,
-            usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        };
-        let texture = device.create_texture(&desc);
-
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Linear,
-            compare: None,
-            lod_min_clamp: 0.0,
-            lod_max_clamp: 100.0,
-            ..Default::default()
-        });
-        Self {
-            visibility,
+    pub fn resize(&mut self, device: &wgpu::Device, size: wgpu::Extent3d) {
+        self.texture_desc.size = size;
+        self.texture = device.create_texture(&self.texture_desc);
+        self.view = self.texture.create_view(&self.view_desc);
+    }
+    pub fn view_bind_group_entry(&self, binding: u32) -> wgpu::BindGroupEntry {
+        wgpu::BindGroupEntry {
             binding,
-            buf: texture,
-            view,
-            sampler,
-        }
-    }
-    pub fn bind_group_layout_entry(&self) -> wgpu::BindGroupLayoutEntry {
-        wgpu::BindGroupLayoutEntry {
-            binding: self.binding,
-            visibility: self.visibility,
-            ty: wgpu::BindingType::StorageTexture {
-                access: wgpu::StorageTextureAccess::WriteOnly,
-                format: Self::FORMAT,
-                view_dimension: wgpu::TextureViewDimension::D2,
-            },
-            count: None,
-        }
-    }
-    pub fn bind_group_entry(&self) -> wgpu::BindGroupEntry {
-        return wgpu::BindGroupEntry {
-            binding: self.binding,
             resource: wgpu::BindingResource::TextureView(&self.view),
-        };
+        }
+    }
+    pub fn sampler_bind_group_entry(&self, binding: u32) -> wgpu::BindGroupEntry {
+        wgpu::BindGroupEntry {
+            binding,
+            resource: wgpu::BindingResource::Sampler(&self.sampler),
+        }
+    }
+    pub fn format(&self) -> wgpu::TextureFormat {
+        self.texture_desc.format
     }
 }
