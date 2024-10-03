@@ -5,10 +5,11 @@ pub struct GPUTimer {
     map_buf: wgpu::Buffer,
     query_set: wgpu::QuerySet,
     timestamps: Vec<u64>,
+    period: f32,
 }
 
 impl GPUTimer {
-    pub fn new(device: &wgpu::Device, count: u32) -> Self {
+    pub fn new(device: &wgpu::Device, period: f32, count: u32) -> Self {
         let count = count * 2;
         let timestamp_set = device.create_query_set(&wgpu::QuerySetDescriptor {
             count,
@@ -34,6 +35,7 @@ impl GPUTimer {
             resolve_buf: timestamp_resolve_buf,
             map_buf: timestamp_mapped_buf,
             timestamps: vec![0; count as usize],
+            period,
         }
     }
 
@@ -44,7 +46,8 @@ impl GPUTimer {
 
     pub fn duration(&self, i: u32) -> Duration {
         let i = i as usize * 2;
-        Duration::from_nanos(self.timestamps[i + 1] - self.timestamps[i])
+        let diff = self.timestamps[i + 1] - self.timestamps[i];
+        Duration::from_nanos((diff as f32 * self.period) as u64)
     }
 
     pub fn finish(&mut self, device: &wgpu::Device) {

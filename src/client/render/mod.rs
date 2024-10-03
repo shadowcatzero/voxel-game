@@ -93,6 +93,7 @@ impl<'a> Renderer<'a> {
         // not exactly sure what this number should be,
         // doesn't affect performance much and depends on "normal" zoom
         let staging_belt = wgpu::util::StagingBelt::new(4096 * 4);
+        let timer = GPUTimer::new(&device, queue.get_timestamp_period(), 1);
 
         Self {
             camera: Camera::default(),
@@ -101,7 +102,7 @@ impl<'a> Renderer<'a> {
             staging_belt,
             surface,
             encoder: Self::create_encoder(&device),
-            timer: GPUTimer::new(&device, 1),
+            timer,
             device,
             config,
             queue,
