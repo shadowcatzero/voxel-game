@@ -19,7 +19,8 @@ use system::render::add_grid;
 
 use crate::{
     common::{ClientMessage, ServerHandle, ServerMessage},
-    server::Server, util::timer::Timer,
+    server::Server,
+    util::timer::Timer,
 };
 
 use self::{input::Input, render::Renderer, ClientState};
@@ -47,8 +48,6 @@ pub struct Client<'a> {
     server: ServerHandle,
     server_id_map: HashMap<Entity, Entity>,
     systems: ClientSystems,
-    frame_target: Instant,
-    frame_time: Duration,
     second_target: Instant,
     the_thing: bool,
 }
@@ -93,8 +92,6 @@ impl Client<'_> {
             world,
             server,
             server_id_map: HashMap::new(),
-            frame_target: Instant::now(),
-            frame_time: FRAME_TIME,
             second_target: Instant::now(),
             the_thing: false,
         }
@@ -125,16 +122,6 @@ impl Client<'_> {
             if self.the_thing == true {
                 // let thing = include_bytes!("../../../../videos/meme/rab_falls_and_dies.mp4");
             }
-        }
-
-        if now >= self.frame_target {
-            self.frame_target += self.frame_time;
-            let mut commands = std::mem::take(&mut self.render_commands);
-            let world_cmds = std::mem::take(&mut self.world.resource_mut::<RenderCommands>().0);
-            commands.extend(world_cmds);
-            self.renderer.handle_commands(commands);
-            self.renderer.draw();
-            self.render_timer.add(self.renderer.timer().duration(0));
         }
 
         if now >= self.second_target {
@@ -177,7 +164,15 @@ impl Client<'_> {
         match event {
             WindowEvent::CloseRequested => self.exit = true,
             WindowEvent::Resized(size) => self.renderer.resize(size),
-            // WindowEvent::RedrawRequested => self.renderer.draw(),
+            WindowEvent::RedrawRequested => {
+                let mut commands = std::mem::take(&mut self.render_commands);
+                let world_cmds = std::mem::take(&mut self.world.resource_mut::<RenderCommands>().0);
+                commands.extend(world_cmds);
+                self.renderer.handle_commands(commands);
+                self.renderer.draw();
+                self.render_timer.add(self.renderer.timer().duration(0));
+                self.window.request_redraw();
+            }
             WindowEvent::CursorLeft { .. } => {
                 self.input.clear();
             }

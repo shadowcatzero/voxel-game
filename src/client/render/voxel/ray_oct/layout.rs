@@ -105,7 +105,7 @@ impl Layout {
                         binding: 4,
                         visibility: ShaderStages::COMPUTE,
                         ty: wgpu::BindingType::StorageTexture {
-                            access: wgpu::StorageTextureAccess::WriteOnly,
+                            access: wgpu::StorageTextureAccess::ReadWrite,
                             format: texture.format(),
                             view_dimension: wgpu::TextureViewDimension::D2,
                         },
@@ -171,20 +171,20 @@ impl Layout {
     pub fn render_pipeline(
         &self,
         device: &wgpu::Device,
-        shader: wgpu::ShaderModule,
+        shader: &wgpu::ShaderModule,
     ) -> wgpu::RenderPipeline {
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Voxel Pipeline"),
             layout: Some(&self.render_pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "vs_main",
+                module: shader,
+                entry_point: "render::vs_main",
                 buffers: &[],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: "fs_main",
+                module: shader,
+                entry_point: "render::fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: self.format,
                     blend: Some(wgpu::BlendState::REPLACE),
@@ -221,7 +221,7 @@ impl Layout {
             label: Some("voxel"),
             layout: Some(&self.compute_pipeline_layout),
             module: shader,
-            entry_point: "main",
+            entry_point: "compute::main",
             compilation_options: Default::default(),
             cache: None,
         })

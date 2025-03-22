@@ -1,4 +1,5 @@
 #![allow(clippy::type_complexity)]
+#![feature(slice_as_chunks)]
 
 use client::ClientApp;
 use winit::event_loop::EventLoop;

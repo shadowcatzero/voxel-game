@@ -15,7 +15,6 @@ pub use color::*;
 use layout::Layout;
 use nalgebra::{Transform3, Translation3, Vector2};
 use std::collections::HashMap;
-use wgpu::include_wgsl;
 use {chunk::Chunk, view::View};
 
 pub struct VoxelPipeline {
@@ -27,21 +26,27 @@ pub struct VoxelPipeline {
     id_map: HashMap<Entity, (usize, Chunk)>,
 }
 
-const RENDER_SHADER: wgpu::ShaderModuleDescriptor<'_> = include_wgsl!("shader/render.wgsl");
-const COMPUTE_SHADER: wgpu::ShaderModuleDescriptor<'_> = include_wgsl!("shader/compute.wgsl");
-
 impl VoxelPipeline {
     pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
         // shaders
 
         let layout = Layout::init(device, config);
 
+        let shader_source: Vec<u32> = include_bytes!(env!("shader.spv"))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|bytes: &[u8; 4]| u32::from_le_bytes(*bytes))
+            .collect();
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("shaders"),
+            source: wgpu::ShaderSource::SpirV(std::borrow::Cow::from(shader_source)),
+        });
+
         let render_bind_group = layout.render_bind_group(device);
-        let shader = device.create_shader_module(RENDER_SHADER);
-        let render_pipeline = layout.render_pipeline(device, shader);
+        let render_pipeline = layout.render_pipeline(device, &shader);
 
         let compute_bind_group = layout.compute_bind_group(device);
-        let shader = device.create_shader_module(COMPUTE_SHADER);
         let compute_pipeline = layout.compute_pipeline(device, &shader);
 
         Self {
@@ -55,8 +60,9 @@ impl VoxelPipeline {
     }
 
     pub fn reset_shader(&mut self, device: &wgpu::Device) {
-        let shader = device.create_shader_module(COMPUTE_SHADER);
-        self.compute_pipeline = self.layout.compute_pipeline(device, &shader);
+        // let shader = device.create_shader_module(COMPUTE_SHADER);
+        // self.compute_pipeline = self.layout.compute_pipeline(device, &shader);
+        println!("removed for now cause of rustgpu!");
     }
 
     pub fn add_group(
@@ -75,27 +81,28 @@ impl VoxelPipeline {
     }
 
     pub fn update_shader(&mut self, device: &wgpu::Device) {
-        let Ok(shader) = std::fs::read_to_string(
-            env!("CARGO_MANIFEST_DIR").to_owned()
-                + "/src/client/render/voxel/ray_oct/shader/compute.wgsl",
-        ) else {
-            println!("Failed to reload shader!");
-            return;
-        };
-        device.push_error_scope(wgpu::ErrorFilter::Validation);
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Shader"),
-            source: wgpu::ShaderSource::Wgsl(shader.into()),
-        });
-        if pollster::block_on(device.pop_error_scope()).is_some() {
-            let comp_info = pollster::block_on(shader.get_compilation_info());
-            println!("Failed to compile shaders:");
-            for msg in comp_info.messages {
-                println!("{}", msg.message);
-            }
-        } else {
-            self.compute_pipeline = self.layout.compute_pipeline(device, &shader);
-        }
+        // let Ok(shader) = std::fs::read_to_string(
+        //     env!("CARGO_MANIFEST_DIR").to_owned()
+        //         + "/src/client/render/voxel/ray_oct/shader/compute.wgsl",
+        // ) else {
+        //     println!("Failed to reload shader!");
+        //     return;
+        // };
+        // device.push_error_scope(wgpu::ErrorFilter::Validation);
+        // let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        //     label: Some("Shader"),
+        //     source: wgpu::ShaderSource::Wgsl(shader.into()),
+        // });
+        // if pollster::block_on(device.pop_error_scope()).is_some() {
+        //     let comp_info = pollster::block_on(shader.get_compilation_info());
+        //     println!("Failed to compile shaders:");
+        //     for msg in comp_info.messages {
+        //         println!("{}", msg.message);
+        //     }
+        // } else {
+        //     self.compute_pipeline = self.layout.compute_pipeline(device, &shader);
+        // }
+        println!("removed for now cause of rustgpu!");
     }
 
     pub fn add_chunk(

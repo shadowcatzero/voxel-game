@@ -1,3 +1,4 @@
 /target
+shader/target
 flamegraph.svg
 perf.data*

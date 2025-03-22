@@ -53,7 +53,8 @@ impl<'a> Renderer<'a> {
                 required_features: wgpu::Features::PUSH_CONSTANTS
                     | wgpu::Features::TIMESTAMP_QUERY
                     | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS
-                    | wgpu::Features::TIMESTAMP_QUERY_INSIDE_PASSES,
+                    | wgpu::Features::TIMESTAMP_QUERY_INSIDE_PASSES
+                    | wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
                 required_limits: wgpu::Limits {
                     max_storage_buffer_binding_size: buf_size,
                     max_buffer_size: buf_size as u64,
