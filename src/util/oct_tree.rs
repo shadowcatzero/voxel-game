@@ -14,18 +14,23 @@ impl OctNode {
     pub const fn new_node(addr: u32) -> Self {
         Self(addr)
     }
+
     pub const fn new_leaf(data: u32) -> Self {
         Self(data | LEAF_BIT)
     }
+
     pub const fn is_leaf(&self) -> bool {
         self.0 >= LEAF_BIT
     }
+
     pub const fn is_node(&self) -> bool {
         self.0 < LEAF_BIT
     }
+
     pub const fn node_data(&self) -> u32 {
         self.0
     }
+
     pub const fn leaf_data(&self) -> u32 {
         self.0 & !LEAF_BIT
     }
@@ -67,9 +72,11 @@ impl OctTree {
             levels,
         }
     }
+
     pub fn from_leaf_fn(f_leaf: &mut impl FnMut(Vector3<usize>) -> u32, levels: u32) -> OctTree {
         Self::from_fn(f_leaf, &mut |_, _| None, levels)
     }
+
     pub fn from_fn(
         f_leaf: &mut impl FnMut(Vector3<usize>) -> u32,
         f_node: &mut impl FnMut(Vector3<usize>, u32) -> Option<u32>,
@@ -77,6 +84,7 @@ impl OctTree {
     ) -> OctTree {
         Self::from_fn_offset(f_leaf, f_node, levels, Vector3::from_element(0))
     }
+
     pub fn from_fn_offset(
         f_leaf: &mut impl FnMut(Vector3<usize>) -> u32,
         f_node: &mut impl FnMut(Vector3<usize>, u32) -> Option<u32>,
@@ -98,6 +106,7 @@ impl OctTree {
             levels,
         }
     }
+
     fn from_fn_offset_inner(
         f_leaf: &mut impl FnMut(Vector3<usize>) -> u32,
         f_node: &mut impl FnMut(Vector3<usize>, u32) -> Option<u32>,
@@ -157,9 +166,11 @@ impl OctTree {
             }
         }
     }
+
     pub fn from_arr(arr: ArrayView3<u32>, levels: u32) -> Self {
         Self::from_fn(&mut |p| arr[(p.x, p.y, p.z)], &mut |_, _| None, levels)
     }
+
     pub fn get(&self, mut pos: Vector3<usize>) -> u32 {
         let mut data_start = 1;
         let mut i = 0;
@@ -175,8 +186,15 @@ impl OctTree {
         }
         self.data[i].leaf_data()
     }
+
     pub fn raw(&self) -> &[OctNode] {
         &self.data
+    }
+
+    pub fn from_children(children: [OctTree; 8]) {
+        // Self {
+        //     data:
+        // }
     }
 }
 

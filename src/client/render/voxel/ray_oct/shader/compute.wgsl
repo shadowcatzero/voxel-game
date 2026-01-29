@@ -64,7 +64,7 @@ const EPSILON = 0.00000000001;
 const MAX_ITERS = 10000;
 // NOTE: CANNOT GO HIGHER THAN 23 due to how floating point
 // numbers are stored and the bit manipulation used
-const MAX_SCALE: u32 = 13;
+const MAX_SCALE: u32 = 23;
 fn trace_full(pos_view: vec4<f32>, dir_view: vec4<f32>) -> vec4<f32> {
     if arrayLength(&voxel_data) == 1 {
         return vec4<f32>(0.0);
